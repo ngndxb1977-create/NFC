@@ -1,16 +1,3 @@
-
-
-
-Skip to content
-Using Gmail with screen readers
-Conversations
-Gemini
-Try Gemini in Gmail, Docs and more
-Boost your productivity with AI, plus get access to Google AI Pro and 5 TB of storage for AED 38.49 for 2 months AED 76.99
-63% of 15 GB used
-Terms · Privacy · Programme Policies
-Last account activity: 0 minutes ago
-Details
 import streamlit as st
 import pandas as pd
 
@@ -159,5 +146,3 @@ with col2:
 st.divider()
 if st.button("🖨️ Export Quotation to PDF / Email Structure"):
     st.info("System integration hook: Ready to wire to a corporate PDF template generator or email client dispatch.")
-gemini-code-1783861677257.py
-Displaying gemini-code-1783861677257.py.
