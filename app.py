@@ -3,27 +3,14 @@
 
 Skip to content
 Using Gmail with screen readers
-1 of 956
-Fwd: App Link
-Inbox
-
-neethu nath
-16:48 (20 minutes ago)
----------- Forwarded message --------- From: neethu nath <neethugnath49@gmail.com> Date: Sun, Jul 12, 2026 at 6:17 PM Subject: App Link To: Naveen <naveengnath@
-
-naveen gopinath
-Attachments
-16:56 (12 minutes ago)
-On Sun, 12 Jul 2026 at 16:48, neethu nath <neethugnath49@gmail.com> wrote: ---------- Forwarded message --------- From: neethu nath <neethugnath49@gmail.com> Da
-
-neethu nath
-Attachments
-17:08 (0 minutes ago)
-to me
-
-app.py
- One attachment
-  •  Scanned by Gmail
+Conversations
+Gemini
+Try Gemini in Gmail, Docs and more
+Boost your productivity with AI, plus get access to Google AI Pro and 5 TB of storage for AED 38.49 for 2 months AED 76.99
+63% of 15 GB used
+Terms · Privacy · Programme Policies
+Last account activity: 0 minutes ago
+Details
 import streamlit as st
 import pandas as pd
 
