@@ -1,60 +1,168 @@
-// --- VEHICLE MODELS (example subset, extend as needed) ---
-const vehicleModels = [
-  { code: "MOP61", name: "Montero P61", year: 2025, basePrice: 0 }, // fill basePrice
-  { code: "P61", name: "Montero P61", year: 2026, basePrice: 0 },
-  { code: "XPHL", name: "Xpander HL", year: 2026, basePrice: 0 },
-  // ...add all from "Combined 2025-2026" sheet
-];
+import streamlit as st
+import pandas as pd
 
-// --- BANK ROI TABLE (from Bank Details sheet) ---
-const bankInterestTable = [
-  {
-    bank: "DIB Local GVH",
-    brackets: [
-      { min: 5000, max: 9999, roi: 0.0325 },
-      { min: 10000, max: 14999, roi: 0.03 },
-      { min: 15000, max: 24999, roi: 0.0225 },
-      { min: 25000, max: 34999, roi: 0.0215 },
-      { min: 35000, max: 99999, roi: 0.0199 },
+# Page theme configuration
+st.set_page_config(
+    page_title="Automotive Finance Calculator Dashboard", 
+    layout="wide", 
+    initial_sidebar_state="expanded"
+)
+
+# --- 1. DATA CATALOGS EXTRACTED FROM THE UPDATED TEMPLATES ---
+VEHICLE_CATALOG = {
+    "Attrage G16 (MY-2025)": {"base_price": 40400, "year": "2025"},
+    "Destinator PR (MY-2026)": {"base_price": 95900, "year": "2026"}
+}
+
+# Explicitly separated catalog inputs to prevent key conflicts
+ADDONS_CATALOG = {
+    "2025": [
+        {"name": "FO Ceramic+ Intr&Extr CeramicGold WdwTnt", "default_price": 0.0, "checked": False},
+        {"name": "FO Exterior ceramic All Cars SCOTCHGUARD", "default_price": 0.0, "checked": False},
+        {"name": "Extended Warranty", "default_price": 0.0, "checked": False},
+        {"name": "VRI", "default_price": 1590.58, "checked": True},
+        {"name": "Vehicle Insurance", "default_price": 3625.00, "checked": True},
+        {"name": "RMC-10-70KMS", "default_price": 5400.00, "checked": True}
     ],
-  },
-  {
-    bank: "SIB STL-Local",
-    brackets: [
-      { min: 5000, max: 9999, roi: 0.0249 },
-      { min: 10000, max: 19999, roi: 0.0219 },
-      { min: 20000, max: 34999, roi: 0.0209 },
-      { min: 35000, max: 49999, roi: 0.0189 },
-      { min: 50000, max: 99999, roi: 0.0179 },
-    ],
-  },
-  // ...add all banks from your Bank Details sheet
-];
+    "2026": [
+        {"name": "FO Ceramic+ Intr&Extr CeramicGold WdwTnt", "default_price": 2700.00, "checked": True},
+        {"name": "FO Exterior ceramic All Cars SCOTCHGUARD", "default_price": 0.0, "checked": False},
+        {"name": "Extended Warranty", "default_price": 2000.00, "checked": True},
+        {"name": "VRI", "default_price": 3722.92, "checked": True},
+        {"name": "Vehicle Insurance", "default_price": 4081.14, "checked": True},
+        {"name": "RMC-10-70KMS", "default_price": 6600.00, "checked": True}
+    ]
+}
 
-// --- RMC TABLE (example subset, from RMC sheet) ---
-const rmcTable = [
-  {
-    code: "MOP61",
-    rmc10_40: 4300,
-    rmc10_60: 5200,
-    rmc10_70: 5900,
-    rmc10_100: 9300,
-  },
-  {
-    code: "XPHL",
-    rmc10_40: 4500,
-    rmc10_60: 5400,
-    rmc10_70: 6100,
-    rmc10_100: 9700,
-  },
-  // ...add all rows
-];
+STANDARD_INTEREST_RATE = 0.0249  
+SUBVENTION_MULTIPLIERS = {1: 0.0000, 2: 0.0339, 3: 0.0339, 4: 0.0678, 5: 0.1017}
 
-// --- EMI FACTORS (from MY-2025 / MY-2026 sheets) ---
-// These are sample factors; adjust to match your exact Excel row.
-const emiFactors = {
-  "2YRS": 0.0339,
-  "3YRS": 0.0678,
-  "4YRS": 0.1017,
-  "5YRS": 0.0, // fill if available
-};
+# --- 2. ADVANCED FINANCIAL ENGINE ---
+def calculate_deal_metrics(base_price, year, selected_addons, dp_percentage):
+    total_addons = sum([item['price'] for item in selected_addons])
+    
+    vat_amount = base_price * 0.05
+    vehicle_with_vat = base_price + vat_amount
+    
+    full_value = vehicle_with_vat + total_addons
+    down_payment = full_value * (dp_percentage / 100)
+    finance_amount = full_value - down_payment
+    
+    tenure_matrix = []
+    for years in [1, 2, 3, 4, 5]:
+        months = years * 12
+        
+        # Standard Plan Amortization
+        total_interest = finance_amount * STANDARD_INTEREST_RATE * years
+        standard_emi = (finance_amount + total_interest) / months
+        
+        # Subvention Tier Adjustments
+        sub_factor = SUBVENTION_MULTIPLIERS[years]
+        subvention_discount = finance_amount * sub_factor
+        
+        if years == 1:
+            subvention_emi = standard_emi
+        else:
+            subvention_emi = standard_emi - (subvention_discount / months) if sub_factor > 0 else standard_emi
+            
+        monthly_savings = standard_emi - subvention_emi
+        
+        tenure_matrix.append({
+            "Tenure Loop": f"{years} Year(s) ({months} Mos)",
+            "Standard EMI (AED)": f"{standard_emi:,.2f}",
+            "Subvention Offer EMI (AED)": f"{subvention_emi:,.2f}",
+            "Monthly Savings (AED)": f"{monthly_savings:,.2f}",
+            "Total Plan Interest (AED)": f"{total_interest:,.2f}"
+        })
+        
+    return {
+        "summary": {
+            "base_price": base_price,
+            "vat_amount": vat_amount,
+            "vehicle_with_vat": vehicle_with_vat,
+            "total_addons": total_addons,
+            "full_value": full_value,
+            "down_payment": down_payment,
+            "finance_amount": finance_amount
+        },
+        "matrix": pd.DataFrame(tenure_matrix)
+    }
+
+# --- 3. STREAMLIT FRONTEND USER INTERFACE ---
+st.title("🚗 Automotive Portfolio Finance Builder")
+st.markdown("Updated platform mapped directly to the new MY-2025 and MY-2026 system sheets.")
+st.divider()
+
+# Left Parameters Control Panel
+st.sidebar.header("🛠️ Setup & Parameters")
+
+selected_model = st.sidebar.selectbox("Select Vehicle Model Variant", list(VEHICLE_CATALOG.keys()))
+model_meta = VEHICLE_CATALOG[selected_model]
+model_year = model_meta["year"]
+
+custom_price = st.sidebar.number_input(
+    "Base Vehicle Price (AED)", 
+    value=int(model_meta["base_price"]), 
+    step=500
+)
+
+st.sidebar.subheader("📦 Add-Ons & Contract Inclusions")
+active_addons = []
+available_addons = ADDONS_CATALOG[model_year]
+
+# UI loop rendering independent elements safely
+for idx, addon in enumerate(available_addons):
+    clean_key = f"chk_{model_year}_{idx}"
+    price_key = f"prc_{model_year}_{idx}"
+    
+    is_active = st.sidebar.checkbox(addon['name'], value=addon['checked'], key=clean_key)
+    custom_addon_price = st.sidebar.number_input(
+        f"└ Price (AED)", 
+        value=float(addon['default_price']), 
+        step=50.0, 
+        key=price_key
+    )
+    if is_active:
+        active_addons.append({"name": addon['name'], "price": custom_addon_price})
+
+down_payment_pct = st.sidebar.slider("Down Payment Allocation (%)", min_value=10, max_value=80, value=20, step=5)
+
+# Engine Execution
+deal = calculate_deal_metrics(custom_price, model_year, active_addons, down_payment_pct)
+s = deal["summary"]
+
+# Content Grid Layout Display
+col1, col2 = st.columns([1, 1.6])
+
+with col1:
+    st.subheader("📊 Transaction Value Stack")
+    
+    # Cleaned: Removed all formatting markdown text wrappers that confuse pandas formatting engines
+    summary_data = {
+        "Financial Component": [
+            "Base Vehicle Price", 
+            "Vehicle VAT (5%)",
+            "Vehicle Price (Inc. VAT)",
+            "Total Add-Ons / Contracts", 
+            "Full Capitalized Asset Value", 
+            f"Down Payment Required ({down_payment_pct}%)", 
+            "Total Capital Financed Pool"
+        ],
+        "Value (AED)": [
+            f"{s['base_price']:,.2f}",
+            f"{s['vat_amount']:,.2f}",
+            f"{s['vehicle_with_vat']:,.2f}",
+            f"{s['total_addons']:,.2f}",
+            f"{s['full_value']:,.2f}",
+            f"{s['down_payment']:,.2f}",
+            f"{s['finance_amount']:,.2f}"
+        ]
+    }
+    st.table(pd.DataFrame(summary_data))
+
+with col2:
+    st.subheader("📉 Amortization Matrix Grid")
+    st.markdown("Tenure mapping factoring updated baseline interest and promotional subventions:")
+    st.dataframe(deal["matrix"], use_container_width=True, hide_index=True)
+    
+    st.success(f"💡 **Subvention Notice:** 1-Year terms evaluate with zero promotional multiplier tiers, while 2-5 year timelines calculate promotional subvention deductions automatically.")
