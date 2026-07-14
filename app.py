@@ -3,18 +3,17 @@ import pandas as pd
 
 # Page theme configuration
 st.set_page_config(
-    page_title="Automotive Finance Calculator Dashboard", 
-    layout="wide", 
+    page_title="Automotive Finance Calculator Dashboard",
+    layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- 1. DATA CATALOGS EXTRACTED FROM THE UPDATED TEMPLATES ---
+# --- 1. DATA CATALOGS ---
 VEHICLE_CATALOG = {
     "Attrage G16 (MY-2025)": {"base_price": 40400, "year": "2025"},
     "Destinator PR (MY-2026)": {"base_price": 95900, "year": "2026"}
 }
 
-# Explicitly separated catalog inputs to prevent key conflicts
 ADDONS_CATALOG = {
     "2025": [
         {"name": "FO Ceramic+ Intr&Extr CeramicGold WdwTnt", "default_price": 0.0, "checked": False},
@@ -34,135 +33,107 @@ ADDONS_CATALOG = {
     ]
 }
 
-STANDARD_INTEREST_RATE = 0.0249  
+STANDARD_INTEREST_RATE = 0.0249
 SUBVENTION_MULTIPLIERS = {1: 0.0000, 2: 0.0339, 3: 0.0339, 4: 0.0678, 5: 0.1017}
 
-# --- 2. ADVANCED FINANCIAL ENGINE ---
+
+# --- 2. ADVANCED FINANCIAL ENGINE (UPDATED) ---
 def calculate_deal_metrics(base_price, year, selected_addons, dp_percentage):
-    total_addons = sum([item['price'] for item in selected_addons])
-    
+
+    # VAT
     vat_amount = base_price * 0.05
     vehicle_with_vat = base_price + vat_amount
-    
-    full_value = vehicle_with_vat + total_addons
+
+    # Separate addons into categories
+    insurance_rate = 0.0
+    vri_rate = 0.0
+    other_addons_total = 0.0
+
+    for item in selected_addons:
+        name = item["name"].lower()
+        price = item["price"]
+
+        if "vehicle insurance" in name:
+            insurance_rate = price / (base_price + vat_amount + (sum(a["price"] for a in selected_addons) - price))
+        elif "vri" in name:
+            vri_rate = price / (base_price + vat_amount + (sum(a["price"] for a in selected_addons) - price))
+        else:
+            other_addons_total += price
+
+    # Insurance base (EXCLUDING Insurance & VRI)
+    insurance_base = base_price + vat_amount + other_addons_total
+
+    # Correct recalculation
+    insurance_amount = insurance_base * insurance_rate
+    vri_amount = insurance_base * vri_rate
+
+    # Full value (used for down payment)
+    full_value = vehicle_with_vat + other_addons_total + insurance_amount + vri_amount
+
+    # Down payment
     down_payment = full_value * (dp_percentage / 100)
+
+    # Finance amount
     finance_amount = full_value - down_payment
-    
+
+    # EMI Matrix
     tenure_matrix = []
     for years in [1, 2, 3, 4, 5]:
         months = years * 12
-        
-        # Standard Plan Amortization
+
         total_interest = finance_amount * STANDARD_INTEREST_RATE * years
         standard_emi = (finance_amount + total_interest) / months
-        
-        # Subvention Tier Adjustments
+
         sub_factor = SUBVENTION_MULTIPLIERS[years]
         subvention_discount = finance_amount * sub_factor
-        
-        if years == 1:
-            subvention_emi = standard_emi
-        else:
-            subvention_emi = standard_emi - (subvention_discount / months) if sub_factor > 0 else standard_emi
-            
-        monthly_savings = standard_emi - subvention_emi
-        
+        subvented_emi = (finance_amount - subvention_discount + total_interest) / months
+
         tenure_matrix.append({
-            "Tenure Loop": f"{years} Year(s) ({months} Mos)",
-            "Standard EMI (AED)": f"{standard_emi:,.2f}",
-            "Subvention Offer EMI (AED)": f"{subvention_emi:,.2f}",
-            "Monthly Savings (AED)": f"{monthly_savings:,.2f}",
-            "Total Plan Interest (AED)": f"{total_interest:,.2f}"
+            "years": years,
+            "months": months,
+            "standard_emi": round(standard_emi, 2),
+            "subvented_emi": round(subvented_emi, 2),
+            "subvention_discount": round(subvention_discount, 2)
         })
-        
+
     return {
-        "summary": {
-            "base_price": base_price,
-            "vat_amount": vat_amount,
-            "vehicle_with_vat": vehicle_with_vat,
-            "total_addons": total_addons,
-            "full_value": full_value,
-            "down_payment": down_payment,
-            "finance_amount": finance_amount
-        },
-        "matrix": pd.DataFrame(tenure_matrix)
+        "base_price": base_price,
+        "vat_amount": vat_amount,
+        "insurance_amount": round(insurance_amount, 2),
+        "vri_amount": round(vri_amount, 2),
+        "other_addons_total": round(other_addons_total, 2),
+        "full_value": round(full_value, 2),
+        "down_payment": round(down_payment, 2),
+        "finance_amount": round(finance_amount, 2),
+        "tenure_matrix": tenure_matrix
     }
 
-# --- 3. STREAMLIT FRONTEND USER INTERFACE ---
-st.title("🚗 Automotive Portfolio Finance Builder")
-st.markdown("Updated platform mapped directly to the new MY-2025 and MY-2026 system sheets.")
-st.divider()
 
-# Left Parameters Control Panel
-st.sidebar.header("🛠️ Setup & Parameters")
+# --- 3. STREAMLIT UI ---
+st.title("Automotive Finance Calculator Dashboard")
 
-selected_model = st.sidebar.selectbox("Select Vehicle Model Variant", list(VEHICLE_CATALOG.keys()))
-model_meta = VEHICLE_CATALOG[selected_model]
-model_year = model_meta["year"]
+vehicle_choice = st.selectbox("Select Vehicle", list(VEHICLE_CATALOG.keys()))
+vehicle_info = VEHICLE_CATALOG[vehicle_choice]
 
-custom_price = st.sidebar.number_input(
-    "Base Vehicle Price (AED)", 
-    value=int(model_meta["base_price"]), 
-    step=500
-)
+base_price = vehicle_info["base_price"]
+year = vehicle_info["year"]
 
-st.sidebar.subheader("📦 Add-Ons & Contract Inclusions")
-active_addons = []
-available_addons = ADDONS_CATALOG[model_year]
+st.subheader("Addons")
+selected_addons = []
 
-# UI loop rendering independent elements safely
-for idx, addon in enumerate(available_addons):
-    clean_key = f"chk_{model_year}_{idx}"
-    price_key = f"prc_{model_year}_{idx}"
-    
-    is_active = st.sidebar.checkbox(addon['name'], value=addon['checked'], key=clean_key)
-    custom_addon_price = st.sidebar.number_input(
-        f"└ Price (AED)", 
-        value=float(addon['default_price']), 
-        step=50.0, 
-        key=price_key
-    )
-    if is_active:
-        active_addons.append({"name": addon['name'], "price": custom_addon_price})
+for addon in ADDONS_CATALOG[year]:
+    checked = st.checkbox(addon["name"], value=addon["checked"])
+    price = st.number_input(f"Price for {addon['name']}", value=float(addon["default_price"]))
+    if checked:
+        selected_addons.append({"name": addon["name"], "price": price})
 
-down_payment_pct = st.sidebar.slider("Down Payment Allocation (%)", min_value=10, max_value=80, value=20, step=5)
+dp_percentage = st.slider("Down Payment %", 0, 50, 20)
 
-# Engine Execution
-deal = calculate_deal_metrics(custom_price, model_year, active_addons, down_payment_pct)
-s = deal["summary"]
+results = calculate_deal_metrics(base_price, year, selected_addons, dp_percentage)
 
-# Content Grid Layout Display
-col1, col2 = st.columns([1, 1.6])
+st.subheader("Deal Summary")
+st.write(results)
 
-with col1:
-    st.subheader("📊 Transaction Value Stack")
-    
-    # Cleaned: Removed all formatting markdown text wrappers that confuse pandas formatting engines
-    summary_data = {
-        "Financial Component": [
-            "Base Vehicle Price", 
-            "Vehicle VAT (5%)",
-            "Vehicle Price (Inc. VAT)",
-            "Total Add-Ons / Contracts", 
-            "Full Capitalized Asset Value", 
-            f"Down Payment Required ({down_payment_pct}%)", 
-            "Total Capital Financed Pool"
-        ],
-        "Value (AED)": [
-            f"{s['base_price']:,.2f}",
-            f"{s['vat_amount']:,.2f}",
-            f"{s['vehicle_with_vat']:,.2f}",
-            f"{s['total_addons']:,.2f}",
-            f"{s['full_value']:,.2f}",
-            f"{s['down_payment']:,.2f}",
-            f"{s['finance_amount']:,.2f}"
-        ]
-    }
-    st.table(pd.DataFrame(summary_data))
-
-with col2:
-    st.subheader("📉 Amortization Matrix Grid")
-    st.markdown("Tenure mapping factoring updated baseline interest and promotional subventions:")
-    st.dataframe(deal["matrix"], use_container_width=True, hide_index=True)
-    
-    st.success(f"💡 **Subvention Notice:** 1-Year terms evaluate with zero promotional multiplier tiers, while 2-5 year timelines calculate promotional subvention deductions automatically.")
+st.subheader("EMI Matrix")
+emi_df = pd.DataFrame(results["tenure_matrix"])
+st.dataframe(emi_df)
