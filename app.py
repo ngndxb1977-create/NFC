@@ -1,168 +1,254 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+import os
+import io
 
-# Page theme configuration
-st.set_page_config(
-    page_title="Automotive Finance Calculator Dashboard", 
-    layout="wide", 
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Mitsubishi Finance Calculator", layout="wide")
 
-# --- 1. DATA CATALOGS EXTRACTED FROM THE UPDATED TEMPLATES ---
-VEHICLE_CATALOG = {
-    "Attrage G16 (MY-2025)": {"base_price": 40400, "year": "2025"},
-    "Destinator PR (MY-2026)": {"base_price": 95900, "year": "2026"}
-}
+# Helper function to extract a clean parent model name
+def get_clean_model_name(raw_name):
+    raw_name_upper = raw_name.upper()
+    if 'ATTRAGE' in raw_name_upper: return 'Attrage'
+    elif 'MIRAGE' in raw_name_upper: return 'Mirage'
+    elif 'ASX' in raw_name_upper: return 'ASX'
+    elif 'ECLIPSE' in raw_name_upper: return 'Eclipse Cross'
+    elif 'XPANDER' in raw_name_upper: return 'Xpander'
+    elif 'OUTLANDER' in raw_name_upper: return 'Outlander'
+    elif 'MONTERO' in raw_name_upper: return 'Montero Sport'
+    elif 'DESTINATOR' in raw_name_upper: return 'Destinator'
+    return raw_name
 
-# Explicitly separated catalog inputs to prevent key conflicts
-ADDONS_CATALOG = {
-    "2025": [
-        {"name": "FO Ceramic+ Intr&Extr CeramicGold WdwTnt", "default_price": 0.0, "checked": False},
-        {"name": "FO Exterior ceramic All Cars SCOTCHGUARD", "default_price": 0.0, "checked": False},
-        {"name": "Extended Warranty", "default_price": 0.0, "checked": False},
-        {"name": "VRI", "default_price": 1590.58, "checked": True},
-        {"name": "Vehicle Insurance", "default_price": 3625.00, "checked": True},
-        {"name": "RMC-10-70KMS", "default_price": 5400.00, "checked": True}
-    ],
-    "2026": [
-        {"name": "FO Ceramic+ Intr&Extr CeramicGold WdwTnt", "default_price": 2700.00, "checked": True},
-        {"name": "FO Exterior ceramic All Cars SCOTCHGUARD", "default_price": 0.0, "checked": False},
-        {"name": "Extended Warranty", "default_price": 2000.00, "checked": True},
-        {"name": "VRI", "default_price": 3722.92, "checked": True},
-        {"name": "Vehicle Insurance", "default_price": 4081.14, "checked": True},
-        {"name": "RMC-10-70KMS", "default_price": 6600.00, "checked": True}
-    ]
-}
-
-STANDARD_INTEREST_RATE = 0.0249  
-SUBVENTION_MULTIPLIERS = {1: 0.0000, 2: 0.0339, 3: 0.0339, 4: 0.0678, 5: 0.1017}
-
-# --- 2. ADVANCED FINANCIAL ENGINE ---
-def calculate_deal_metrics(base_price, year, selected_addons, dp_percentage):
-    total_addons = sum([item['price'] for item in selected_addons])
+# ------------------------------------------------------------------
+# AUTOMATIC DATA EXTRACTION ENGINE
+# ------------------------------------------------------------------
+@st.cache_data
+def load_supplementary_data(file_path):
+    """Loads the Bank details and RMC tiers from the standalone file."""
+    bank_data = {}
+    rmc_data = {}
     
-    vat_amount = base_price * 0.05
-    vehicle_with_vat = base_price + vat_amount
-    
-    full_value = vehicle_with_vat + total_addons
-    down_payment = full_value * (dp_percentage / 100)
-    finance_amount = full_value - down_payment
-    
-    tenure_matrix = []
-    for years in [1, 2, 3, 4, 5]:
-        months = years * 12
-        
-        # Standard Plan Amortization
-        total_interest = finance_amount * STANDARD_INTEREST_RATE * years
-        standard_emi = (finance_amount + total_interest) / months
-        
-        # Subvention Tier Adjustments
-        sub_factor = SUBVENTION_MULTIPLIERS[years]
-        subvention_discount = finance_amount * sub_factor
-        
-        if years == 1:
-            subvention_emi = standard_emi
-        else:
-            subvention_emi = standard_emi - (subvention_discount / months) if sub_factor > 0 else standard_emi
+    if os.path.exists(file_path):
+        # 1. Parse Bank Details
+        try:
+            df_bank = pd.read_excel(file_path, sheet_name='Bank Details')
+            for _, row in df_bank.iterrows():
+                bank_name = str(row['Bank Name']).strip()
+                if not bank_name or bank_name == "nan": continue
+                
+                bank_data[bank_name] = {}
+                for i in range(1, 6):
+                    sb_col = f"Salary Bracket.{i}" if i > 1 else "Salary Bracket"
+                    roi_col = f"ROI.{i}" if i > 1 else "ROI"
+                    
+                    if sb_col in df_bank.columns and roi_col in df_bank.columns:
+                        sb_val = str(row[sb_col]).strip()
+                        roi_val = row[roi_col]
+                        if sb_val and sb_val != "nan" and pd.notna(roi_val):
+                            bank_data[bank_name][sb_val] = float(roi_val)
+        except Exception as e:
+            st.warning(f"Could not parse Bank Details tab: {e}")
+
+        # 2. Parse RMC Tiers
+        try:
+            df_rmc = pd.read_excel(file_path, sheet_name='RMC')
+            for _, row in df_rmc.iterrows():
+                v_code = str(row['Variant Codes']).strip()
+                if not v_code or v_code == "nan": continue
+                
+                rmc_data[v_code] = {
+                    "RMC-10-40": float(row['RMC-10-40']) if pd.notna(row['RMC-10-40']) else 0.0,
+                    "RMC-10-60": float(row['RMC-10-60']) if pd.notna(row['RMC-10-60']) else 0.0,
+                    "RMC-10-70": float(row['RMC-10-70']) if pd.notna(row['RMC-10-70']) else 0.0,
+                    "RMC-10-100": float(row['RMC-10-100']) if pd.notna(row['RMC-10-100']) else 0.0,
+                }
+        except Exception as e:
+            st.warning(f"Could not parse RMC tab: {e}")
             
-        monthly_savings = standard_emi - subvention_emi
+    return bank_data, rmc_data
+
+@st.cache_data
+def load_all_vehicle_data(vehicle_file_path):
+    """Parses the 80 individual variant sheets from the core project workbook."""
+    catalog = {"2025": {}, "2026": {}}
+    
+    if not os.path.exists(vehicle_file_path):
+        return catalog
+
+    xls = pd.ExcelFile(vehicle_file_path)
+    for sheet in xls.sheet_names:
+        # Skip tracking index sheets if they exist
+        if sheet in ['Structure', 'MY-2025', 'MY-2026', 'Combined 2025-2026', 'Bank Details', 'RMC']: 
+            continue
+            
+        try:
+            df = pd.read_excel(xls, sheet_name=sheet, header=None)
+            
+            raw_name = str(df.iloc[4, 2]).strip()
+            code = str(df.iloc[4, 3]).strip()
+            year_string = str(df.iloc[4, 4]).strip()
+            
+            if not raw_name or raw_name == "nan": raw_name = sheet
+            if not code or code == "nan": code = sheet
+            
+            # Determine Model Year dynamically
+            year_key = "2026" if "2026" in year_string or "26" in sheet else "2025"
+            
+            base_price = float(df.iloc[6, 1])          
+            interest_rate = float(df.iloc[18, 3])  
+            
+            # Extract accessories (Rows 10 to 15)
+            accessories = {}
+            for r_idx in range(10, 16):
+                acc_name = str(df.iloc[r_idx, 1]).strip()
+                acc_status = str(df.iloc[r_idx, 2]).strip().upper()
+                try: acc_val = float(df.iloc[r_idx, 3])
+                except: acc_val = 0.0
+                
+                if acc_name and acc_name != "nan" and acc_name != "Accessory":
+                    accessories[acc_name] = {"price": acc_val, "default_checked": acc_status == "YES"}
+            
+            model_name = get_clean_model_name(raw_name)
+            
+            if model_name not in catalog[year_key]: 
+                catalog[year_key][model_name] = {}
+                
+            catalog[year_key][model_name][code] = {
+                "base_price": base_price, 
+                "interest_rate": interest_rate, 
+                "accessories": accessories
+            }
+        except: 
+            continue
+                
+    return catalog
+
+# ------------------------------------------------------------------
+# ENVIRONMENT INITIALIZATION
+# ------------------------------------------------------------------
+FILE_VEHICLES = "NFC New VRI Project (2).xlsx"
+FILE_SUPPLEMENT = "Bank & RMC Details.xlsx"
+
+VEHICLE_CATALOG = load_all_vehicle_data(FILE_VEHICLES)
+BANK_RULES, RMC_RULES = load_supplementary_data(FILE_SUPPLEMENT)
+
+# ------------------------------------------------------------------
+# INTERFACE LAYOUT (SIDEBAR CONSOLE)
+# ------------------------------------------------------------------
+if not VEHICLE_CATALOG["2025"] and not VEHICLE_CATALOG["2026"]:
+    st.error(f"Could not load vehicle datasets from '{FILE_VEHICLES}'. Please verify it exists in your repository.")
+else:
+    with st.sidebar:
+        st.header("🚗 Vehicle Selection")
+        selected_year = st.selectbox("Select Model Year:", sorted(list(VEHICLE_CATALOG.keys())))
         
-        tenure_matrix.append({
-            "Tenure Loop": f"{years} Year(s) ({months} Mos)",
-            "Standard EMI (AED)": f"{standard_emi:,.2f}",
-            "Subvention Offer EMI (AED)": f"{subvention_emi:,.2f}",
-            "Monthly Savings (AED)": f"{monthly_savings:,.2f}",
-            "Total Plan Interest (AED)": f"{total_interest:,.2f}"
+        available_names = sorted(list(VEHICLE_CATALOG[selected_year].keys()))
+        selected_name = st.selectbox("Select Vehicle Name:", available_names)
+        
+        if selected_name not in VEHICLE_CATALOG[selected_year]:
+            selected_name = available_names[0] if available_names else None
+
+        if selected_name:
+            available_codes = sorted(list(VEHICLE_CATALOG[selected_year][selected_name].keys()))
+            selected_code = st.selectbox("Select Variant Code:", available_codes)
+            v_data = VEHICLE_CATALOG[selected_year][selected_name][selected_code]
+        else:
+            st.error("No variants located matching specifications.")
+            st.stop()
+        
+        st.markdown("---")
+        st.header("🏦 Financial Provider Setup")
+        
+        # Load bank data dynamically if the sheet exists, otherwise fall back gracefully
+        if BANK_RULES:
+            bank_options = sorted(list(BANK_RULES.keys()))
+            selected_bank = st.selectbox("Select Financial Institution:", bank_options)
+            
+            bracket_options = sorted(list(BANK_RULES[selected_bank].keys()))
+            selected_bracket = st.selectbox("Select Base Income Bracket:", bracket_options)
+            
+            fetched_roi = BANK_RULES[selected_bank][selected_bracket]
+        else:
+            selected_bank = "Sheet Baseline Default"
+            fetched_roi = v_data["interest_rate"]
+            st.info("Upload 'Bank & RMC Details.xlsx' to activate bank bracket dropdowns.")
+            
+        bank_rate = st.number_input("Flat Interest Rate (ROI):", value=fetched_roi, format="%.4f", step=0.0001)
+        
+        st.markdown("---")
+        st.header("⚙️ Adjustment Matrix")
+        base_vehicle_price = st.number_input("Base Price (AED):", value=v_data["base_price"], step=500.0)
+        
+        down_payment_pct = st.slider("Down Payment Percentage (%):", 0, 100, 20) / 100.0
+        calculated_downpayment = base_vehicle_price * down_payment_pct
+        st.write(f"**Down Payment Realized:** {calculated_downpayment:,.2f} AED")
+        
+        st.markdown("---")
+        st.header("➕ Optional Agreements")
+        
+        # Pull RMC options dynamically if the file is present
+        rmc_cost = 0.0
+        if RMC_RULES and selected_code in RMC_RULES:
+            st.write("**Regional Maintenance Contracts (RMC)**")
+            rmc_packages = ["None"] + list(RMC_RULES[selected_code].keys())
+            chosen_rmc = st.selectbox("Select Service Tier:", rmc_packages)
+            if chosen_rmc != "None":
+                rmc_cost = RMC_RULES[selected_code][chosen_rmc]
+                st.write(f"*Appended Cost: +{rmc_cost:,.2f} AED*")
+        
+        st.write("**Accessories Checklists:**")
+        selected_addons_total = 0.0
+        for addon_name, info in v_data["accessories"].items():
+            if st.checkbox(f"{addon_name} (+{info['price']:,.0f} AED)", value=info["default_checked"]):
+                selected_addons_total += info["price"]
+
+    # ------------------------------------------------------------------
+    # MAIN RENDERING MATRIX
+    # ------------------------------------------------------------------
+    st.title("Mitsubishi Financial Matrix Calculator")
+    st.markdown(f"### Current Node: **{selected_name} — {selected_code} ({selected_year})**")
+    if BANK_RULES:
+        st.caption(f"Provider Context: {selected_bank} ({selected_bracket})")
+    st.markdown("---")
+    
+    # Calculate overall aggregate
+    total_financed_amount = (base_vehicle_price + selected_addons_total + rmc_cost) - calculated_downpayment
+    
+    tenures = [2, 3, 4, 5]
+    emi_results = []
+    
+    for years in tenures:
+        months = years * 12
+        total_interest = total_financed_amount * bank_rate * years
+        total_repayable = total_financed_amount + total_interest
+        monthly_emi = total_repayable / months
+        
+        emi_results.append({
+            "Tenure Period": f"{years} Years ({months} Months)",
+            "Financed Principal (AED)": round(total_financed_amount, 2),
+            "Total Interest (AED)": round(total_interest, 2),
+            "Estimated Monthly EMI (AED)": round(monthly_emi, 2)
         })
         
-    return {
-        "summary": {
-            "base_price": base_price,
-            "vat_amount": vat_amount,
-            "vehicle_with_vat": vehicle_with_vat,
-            "total_addons": total_addons,
-            "full_value": full_value,
-            "down_payment": down_payment,
-            "finance_amount": finance_amount
-        },
-        "matrix": pd.DataFrame(tenure_matrix)
-    }
-
-# --- 3. STREAMLIT FRONTEND USER INTERFACE ---
-st.title("🚗 Automotive Portfolio Finance Builder")
-st.markdown("Updated platform mapped directly to the new MY-2025 and MY-2026 system sheets.")
-st.divider()
-
-# Left Parameters Control Panel
-st.sidebar.header("🛠️ Setup & Parameters")
-
-selected_model = st.sidebar.selectbox("Select Vehicle Model Variant", list(VEHICLE_CATALOG.keys()))
-model_meta = VEHICLE_CATALOG[selected_model]
-model_year = model_meta["year"]
-
-custom_price = st.sidebar.number_input(
-    "Base Vehicle Price (AED)", 
-    value=int(model_meta["base_price"]), 
-    step=500
-)
-
-st.sidebar.subheader("📦 Add-Ons & Contract Inclusions")
-active_addons = []
-available_addons = ADDONS_CATALOG[model_year]
-
-# UI loop rendering independent elements safely
-for idx, addon in enumerate(available_addons):
-    clean_key = f"chk_{model_year}_{idx}"
-    price_key = f"prc_{model_year}_{idx}"
+    df_output = pd.DataFrame(emi_results)
     
-    is_active = st.sidebar.checkbox(addon['name'], value=addon['checked'], key=clean_key)
-    custom_addon_price = st.sidebar.number_input(
-        f"└ Price (AED)", 
-        value=float(addon['default_price']), 
-        step=50.0, 
-        key=price_key
+    # Format for clean display visual
+    df_display = df_output.copy()
+    df_display["Financed Principal (AED)"] = df_display["Financed Principal (AED)"].map('{:,.2f}'.format)
+    df_display["Total Interest (AED)"] = df_display["Total Interest (AED)"].map('{:,.2f}'.format)
+    df_display["Estimated Monthly EMI (AED)"] = df_display["Estimated Monthly EMI (AED)"].map('{:,.2f}'.format)
+    
+    st.table(df_display)
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # --- STREAM EXPORT UTILITY ---
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df_output.to_excel(writer, index=False, sheet_name="EMI Matrix")
+    
+    st.download_button(
+        label="📥 Export Financial Matrix to Excel",
+        data=buffer.getvalue(),
+        file_name=f"Finance_Matrix_{selected_name.replace(' ', '_')}_{selected_code}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    if is_active:
-        active_addons.append({"name": addon['name'], "price": custom_addon_price})
-
-down_payment_pct = st.sidebar.slider("Down Payment Allocation (%)", min_value=10, max_value=80, value=20, step=5)
-
-# Engine Execution
-deal = calculate_deal_metrics(custom_price, model_year, active_addons, down_payment_pct)
-s = deal["summary"]
-
-# Content Grid Layout Display
-col1, col2 = st.columns([1, 1.6])
-
-with col1:
-    st.subheader("📊 Transaction Value Stack")
-    
-    # Cleaned: Removed all formatting markdown text wrappers that confuse pandas formatting engines
-    summary_data = {
-        "Financial Component": [
-            "Base Vehicle Price", 
-            "Vehicle VAT (5%)",
-            "Vehicle Price (Inc. VAT)",
-            "Total Add-Ons / Contracts", 
-            "Full Capitalized Asset Value", 
-            f"Down Payment Required ({down_payment_pct}%)", 
-            "Total Capital Financed Pool"
-        ],
-        "Value (AED)": [
-            f"{s['base_price']:,.2f}",
-            f"{s['vat_amount']:,.2f}",
-            f"{s['vehicle_with_vat']:,.2f}",
-            f"{s['total_addons']:,.2f}",
-            f"{s['full_value']:,.2f}",
-            f"{s['down_payment']:,.2f}",
-            f"{s['finance_amount']:,.2f}"
-        ]
-    }
-    st.table(pd.DataFrame(summary_data))
-
-with col2:
-    st.subheader("📉 Amortization Matrix Grid")
-    st.markdown("Tenure mapping factoring updated baseline interest and promotional subventions:")
-    st.dataframe(deal["matrix"], use_container_width=True, hide_index=True)
-    
-    st.success(f"💡 **Subvention Notice:** 1-Year terms evaluate with zero promotional multiplier tiers, while 2-5 year timelines calculate promotional subvention deductions automatically.")
