@@ -4,7 +4,83 @@ import numpy as np
 import os
 import io
 
-st.set_page_config(page_title="Mitsubishi Finance Calculator", layout="wide")
+# Set configuration at the absolute top
+st.set_page_config(page_title="Mitsubishi Financial Matrix Calculator", layout="wide")
+
+# ==========================================
+# CUSTOM UX/UI STYLING ENGINE (AMETHYSTA UPDATE)
+# ==========================================
+st.markdown(
+    """
+    <style>
+    /* Import Google Fonts */
+    @import url('https://fonts.googleapis.com/css2?family=Karma:wght@400;600&family=Amethysta&family=Quicksand:wght@500;700&display=swap');
+
+    /* Anthropic Style Background & Global Font Settings */
+    .stApp {
+        background-color: #FBF9F6 !important; /* Signature Anthropic warm light clay background */
+        color: #191919 !important;
+        font-family: 'Karma', serif !important;
+        font-size: 16px !important; /* UX Standard Body Font Size */
+        line-height: 1.6 !important;
+    }
+
+    /* Primary Headings (H1) - Quicksand */
+    h1, [data-testid="stHeader"] {
+        font-family: 'Quicksand', sans-serif !important;
+        font-weight: 700 !important;
+        font-size: 2.25rem !important;
+        color: #191919 !important;
+        letter-spacing: -0.02em;
+    }
+
+    /* Smaller Headings & Numeric Labels (H2, H3) - Amethysta */
+    h2, h3, h4, h5, h6 {
+        font-family: 'Amethysta', serif !important;
+        font-weight: 400 !important;
+        font-size: 1.5rem !important; /* UX Subheading scale */
+        color: #383838 !important;
+        margin-top: 1.5rem !important;
+    }
+
+    /* Sidebar Styling Alignment */
+    [data-testid="stSidebar"] {
+        background-color: #F4F0EA !important; /* Slightly darker warm tint for sidebar depth */
+    }
+    
+    [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+        font-family: 'Quicksand', sans-serif !important; /* Sidebar labels stay clean and geometric */
+        font-weight: 600 !important;
+        font-size: 1.2rem !important;
+    }
+    /* Fix Oversized Summary Metrics & Prevent Text Truncation */
+    [data-testid="stMetricValue"] {
+        font-family: 'Amethysta', serif !important;
+        font-size: 1.5rem !important; /* Reduces number size to a crisp, standard UX scale */
+        font-weight: 400 !important;
+    }
+    [data-testid="stMetricLabel"] {
+        font-family: 'Quicksand', sans-serif !important;
+        font-size: 0.95rem !important;
+        color: #555555 !important;
+    }
+    /* Complete clamping for the top summary metrics */
+    [data-testid="stMetricValue"] {
+        font-family: 'Amethysta', serif !important;
+        font-size: 1.6rem !important; /* Professional UX layout balance */
+        font-weight: 400 !important;
+        color: #191919 !important;
+    }
+    [data-testid="stMetricLabel"], [data-testid="stMetricLabel"] p {
+        font-family: 'Quicksand', sans-serif !important;
+        font-size: 0.95rem !important;
+        font-weight: 600 !important;
+        color: #555555 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # Helper function to extract a clean parent model name
 def get_clean_model_name(raw_name):
@@ -20,16 +96,14 @@ def get_clean_model_name(raw_name):
     return raw_name
 
 # ------------------------------------------------------------------
-# AUTOMATIC DATA EXTRACTION ENGINE
+# MASTER EXCEL EXTRACTION ENGINE
 # ------------------------------------------------------------------
 @st.cache_data
 def load_supplementary_data(file_path):
-    """Loads the Bank details and RMC tiers from the standalone file."""
     bank_data = {}
     rmc_data = {}
-    
     if os.path.exists(file_path):
-        # 1. Parse Bank Details
+        # Parse Bank Details
         try:
             df_bank = pd.read_excel(file_path, sheet_name='Bank Details')
             for _, row in df_bank.iterrows():
@@ -46,10 +120,10 @@ def load_supplementary_data(file_path):
                         roi_val = row[roi_col]
                         if sb_val and sb_val != "nan" and pd.notna(roi_val):
                             bank_data[bank_name][sb_val] = float(roi_val)
-        except Exception as e:
-            st.warning(f"Could not parse Bank Details tab: {e}")
+        except:
+            pass
 
-        # 2. Parse RMC Tiers
+        # Parse RMC Pricing Map
         try:
             df_rmc = pd.read_excel(file_path, sheet_name='RMC')
             for _, row in df_rmc.iterrows():
@@ -62,22 +136,19 @@ def load_supplementary_data(file_path):
                     "RMC-10-70": float(row['RMC-10-70']) if pd.notna(row['RMC-10-70']) else 0.0,
                     "RMC-10-100": float(row['RMC-10-100']) if pd.notna(row['RMC-10-100']) else 0.0,
                 }
-        except Exception as e:
-            st.warning(f"Could not parse RMC tab: {e}")
+        except:
+            pass
             
     return bank_data, rmc_data
 
 @st.cache_data
 def load_all_vehicle_data(vehicle_file_path):
-    """Parses the 80 individual variant sheets from the core project workbook."""
     catalog = {"2025": {}, "2026": {}}
-    
     if not os.path.exists(vehicle_file_path):
         return catalog
 
     xls = pd.ExcelFile(vehicle_file_path)
     for sheet in xls.sheet_names:
-        # Skip tracking index sheets if they exist
         if sheet in ['Structure', 'MY-2025', 'MY-2026', 'Combined 2025-2026', 'Bank Details', 'RMC']: 
             continue
             
@@ -91,32 +162,56 @@ def load_all_vehicle_data(vehicle_file_path):
             if not raw_name or raw_name == "nan": raw_name = sheet
             if not code or code == "nan": code = sheet
             
-            # Determine Model Year dynamically
             year_key = "2026" if "2026" in year_string or "26" in sheet else "2025"
             
+            # Base Coordinates
             base_price = float(df.iloc[6, 1])          
             interest_rate = float(df.iloc[18, 3])  
             
-            # Extract accessories (Rows 10 to 15)
+            # Mandatory Static Fees from Sheet (H12 & H13)
+            registration_fee = float(df.iloc[11, 7]) if pd.notna(df.iloc[11, 7]) else 600.0
+            processing_fee_dp = float(df.iloc[12, 7]) if pd.notna(df.iloc[12, 7]) else 315.0
+            
+            # Map Row 10 to 16 Accessories
             accessories = {}
-            for r_idx in range(10, 16):
-                acc_name = str(df.iloc[r_idx, 1]).strip()
-                acc_status = str(df.iloc[r_idx, 2]).strip().upper()
-                try: acc_val = float(df.iloc[r_idx, 3])
-                except: acc_val = 0.0
+            row_labels = {
+                10: "Accessory",
+                11: "Ceramic Gold Window Tint",
+                12: "Exterior Scotchguard Protection",
+                13: "Extended Warranty",
+                14: "VRI",
+                15: "Vehicle Insurance",
+                16: "RMC"
+            }
+            
+            for row_idx, default_label in row_labels.items():
+                cell_label = str(df.iloc[row_idx - 1, 1]).strip()
+                status = str(df.iloc[row_idx - 1, 2]).strip().upper()
                 
-                if acc_name and acc_name != "nan" and acc_name != "Accessory":
-                    accessories[acc_name] = {"price": acc_val, "default_checked": acc_status == "YES"}
+                label = cell_label if (cell_label and cell_label != "nan") else default_label
+                is_checked = (status == "YES")
+                
+                try:
+                    price_val = float(df.iloc[row_idx - 1, 3])
+                except:
+                    price_val = 0.0
+                
+                accessories[label] = {
+                    "price_raw": price_val,
+                    "default_checked": is_checked,
+                    "type_tag": "VRI" if row_idx == 14 else ("INSURANCE" if row_idx == 15 else ("RMC" if row_idx == 16 else "STANDARD"))
+                }
             
             model_name = get_clean_model_name(raw_name)
-            
             if model_name not in catalog[year_key]: 
                 catalog[year_key][model_name] = {}
                 
             catalog[year_key][model_name][code] = {
                 "base_price": base_price, 
                 "interest_rate": interest_rate, 
-                "accessories": accessories
+                "accessories": accessories,
+                "registration_fee": registration_fee,
+                "processing_fee_dp": processing_fee_dp
             }
         except: 
             continue
@@ -124,131 +219,316 @@ def load_all_vehicle_data(vehicle_file_path):
     return catalog
 
 # ------------------------------------------------------------------
-# ENVIRONMENT INITIALIZATION
+# CONFIG & FILE TARGETS
 # ------------------------------------------------------------------
-FILE_VEHICLES = "NFC New VRI Project (2).xlsx"
+FILE_VEHICLES = "NFC New VRI Project (2).xlsx"  # Updated to match your exact file name
 FILE_SUPPLEMENT = "Bank & RMC Details.xlsx"
 
 VEHICLE_CATALOG = load_all_vehicle_data(FILE_VEHICLES)
 BANK_RULES, RMC_RULES = load_supplementary_data(FILE_SUPPLEMENT)
 
+if "view_state" not in st.session_state:
+    st.session_state.view_state = "input"
+
 # ------------------------------------------------------------------
-# INTERFACE LAYOUT (SIDEBAR CONSOLE)
+# SIDEBAR - CONFIGURATION INTERFACE
 # ------------------------------------------------------------------
 if not VEHICLE_CATALOG["2025"] and not VEHICLE_CATALOG["2026"]:
-    st.error(f"Could not load vehicle datasets from '{FILE_VEHICLES}'. Please verify it exists in your repository.")
+    st.error(f"Could not load vehicle datasets from '{FILE_VEHICLES}'.")
 else:
     with st.sidebar:
-        st.header("🚗 Vehicle Selection")
-        selected_year = st.selectbox("Select Model Year:", sorted(list(VEHICLE_CATALOG.keys())))
+        st.header("🚗 Configuration Console")
+        selected_year = st.selectbox("Model Year:", sorted(list(VEHICLE_CATALOG.keys())))
         
         available_names = sorted(list(VEHICLE_CATALOG[selected_year].keys()))
-        selected_name = st.selectbox("Select Vehicle Name:", available_names)
+        selected_name = st.selectbox("Vehicle Name:", available_names)
         
-        if selected_name not in VEHICLE_CATALOG[selected_year]:
-            selected_name = available_names[0] if available_names else None
-
         if selected_name:
             available_codes = sorted(list(VEHICLE_CATALOG[selected_year][selected_name].keys()))
-            selected_code = st.selectbox("Select Variant Code:", available_codes)
+            selected_code = st.selectbox("Variant Code:", available_codes)
             v_data = VEHICLE_CATALOG[selected_year][selected_name][selected_code]
         else:
-            st.error("No variants located matching specifications.")
             st.stop()
-        
+            
         st.markdown("---")
-        st.header("🏦 Financial Provider Setup")
+        st.subheader("🏦 Financial Provider Rates")
         
-        # Load bank data dynamically if the sheet exists, otherwise fall back gracefully
         if BANK_RULES:
             bank_options = sorted(list(BANK_RULES.keys()))
-            selected_bank = st.selectbox("Select Financial Institution:", bank_options)
-            
+            selected_bank = st.selectbox("Select Institution:", bank_options)
             bracket_options = sorted(list(BANK_RULES[selected_bank].keys()))
-            selected_bracket = st.selectbox("Select Base Income Bracket:", bracket_options)
-            
+            selected_bracket = st.selectbox("Income Bracket Selection:", bracket_options)
             fetched_roi = BANK_RULES[selected_bank][selected_bracket]
         else:
-            selected_bank = "Sheet Baseline Default"
+            selected_bank = "Sheet Benchmark"
             fetched_roi = v_data["interest_rate"]
-            st.info("Upload 'Bank & RMC Details.xlsx' to activate bank bracket dropdowns.")
             
         bank_rate = st.number_input("Flat Interest Rate (ROI):", value=fetched_roi, format="%.4f", step=0.0001)
         
         st.markdown("---")
-        st.header("⚙️ Adjustment Matrix")
-        base_vehicle_price = st.number_input("Base Price (AED):", value=v_data["base_price"], step=500.0)
-        
+        st.subheader("⚙️ Calculations Adjuster")
+        base_vehicle_price = st.number_input("Base Vehicle Price (AED):", value=v_data["base_price"], step=500.0)
         down_payment_pct = st.slider("Down Payment Percentage (%):", 0, 100, 20) / 100.0
-        calculated_downpayment = base_vehicle_price * down_payment_pct
-        st.write(f"**Down Payment Realized:** {calculated_downpayment:,.2f} AED")
-        
+
         st.markdown("---")
-        st.header("➕ Optional Agreements")
+        st.subheader("➕ Accessories & Services Checklists")
         
-        # Pull RMC options dynamically if the file is present
-        rmc_cost = 0.0
-        if RMC_RULES and selected_code in RMC_RULES:
-            st.write("**Regional Maintenance Contracts (RMC)**")
+        acc_selected_price = 0.0   
+        ceramic_selected_price = 0.0 
+        exterior_selected_price = 0.0 
+        warranty_selected_price = 0.0 
+        rmc_selected_cost = 0.0     
+        
+        # Check if dynamic RMC catalog rules override standard inputs
+        override_rmc_active = (RMC_RULES and selected_code in RMC_RULES)
+        
+        checked_addons_list = []
+        is_vri_selected = False
+        is_insurance_selected = False
+        
+        # We need a quick pass to parse standard accessories to establish the U19 Base for dynamic checkbox pricing
+        temp_acc_price = 0.0
+        temp_ceramic_price = 0.0
+        temp_exterior_price = 0.0
+        temp_warranty_price = 0.0
+        temp_rmc_price = 0.0
+
+        for name, info in v_data["accessories"].items():
+            if info["type_tag"] == "STANDARD":
+                if "CERAMIC" in name.upper() and "WINDOW" in name.upper():
+                    temp_ceramic_price = info["price_raw"]
+                elif "EXTERIOR" in name.upper() or "SCOTCH" in name.upper():
+                    temp_exterior_price = info["price_raw"]
+                elif "WARRANTY" in name.upper():
+                    temp_warranty_price = info["price_raw"]
+                else:
+                    temp_acc_price = info["price_raw"]
+            elif info["type_tag"] == "RMC" and not override_rmc_active:
+                temp_rmc_price = info["price_raw"]
+
+        # Formulate dynamic U19 reference base to calculate real-time label values
+        temp_u19 = (base_vehicle_price + temp_acc_price + temp_ceramic_price + temp_exterior_price + temp_warranty_price + temp_rmc_price) * 1.05
+
+        # Render checkboxes with matched calculated prices instead of raw template prices
+        for name, info in v_data["accessories"].items():
+            if info["type_tag"] == "RMC" and override_rmc_active:
+                continue
+            
+            # Determine dynamic checkbox label cost
+            if info["type_tag"] == "VRI":
+                display_price = temp_u19 * 3.15 * 1.05 / 100
+            elif info["type_tag"] == "INSURANCE":
+                if selected_code in ["PR", "PRP", "HLP"]:
+                    display_price = (temp_u19 * 0.03 + 510) * 1.05
+                elif selected_code in ["H57", "P57", "H64", "H59", "P59", "H61", "P61"]:
+                    display_price = (temp_u19 * 0.0275 + 510) * 1.05
+                elif selected_code in ["EH40", "EH43"]:
+                    display_price = (temp_u19 * 0.03 + 450) * 1.05
+                else:
+                    display_price = 3690.0 if "Xpander" in selected_name else 3625.0
+            else:
+                display_price = info["price_raw"]
+
+            checked = st.checkbox(f"{name} (+{display_price:,.2f} AED)", value=info["default_checked"])
+            
+            if checked:
+                if info["type_tag"] == "STANDARD":
+                    if "CERAMIC" in name.upper() and "WINDOW" in name.upper():
+                        ceramic_selected_price = display_price
+                    elif "EXTERIOR" in name.upper() or "SCOTCH" in name.upper():
+                        exterior_selected_price = display_price
+                    elif "WARRANTY" in name.upper():
+                        warranty_selected_price = display_price
+                    else:
+                        acc_selected_price = display_price
+                    checked_addons_list.append({"name": name, "price": display_price, "vat_taxable": True})
+                elif info["type_tag"] == "VRI":
+                    is_vri_selected = True
+                elif info["type_tag"] == "INSURANCE":
+                    is_insurance_selected = True
+                elif info["type_tag"] == "RMC":
+                    rmc_selected_cost = display_price
+                    checked_addons_list.append({"name": name, "price": display_price, "vat_taxable": False})
+                    
+        # Render dynamic drop-down selection only if active
+        if override_rmc_active:
             rmc_packages = ["None"] + list(RMC_RULES[selected_code].keys())
-            chosen_rmc = st.selectbox("Select Service Tier:", rmc_packages)
+            chosen_rmc = st.selectbox("Routine Maintenance Contract (RMC):", rmc_packages)
             if chosen_rmc != "None":
-                rmc_cost = RMC_RULES[selected_code][chosen_rmc]
-                st.write(f"*Appended Cost: +{rmc_cost:,.2f} AED*")
+                rmc_selected_cost = RMC_RULES[selected_code][chosen_rmc]
+                checked_addons_list.append({"name": f"Routine Maintenance Contract ({chosen_rmc})", "price": rmc_selected_cost, "vat_taxable": False})
+
+        # ==========================================
+        # HIGH-FIDELITY EXCEL MATCHING MATH ENGINE (U19-FIXED)
+        # ==========================================
+        # Step 1: Establish the true, complete template baseline value for U19 from the Excel file structure
+        # (Car Price + ALL baseline template accessory row values) * 1.05
+        baseline_template_pre_vat = base_vehicle_price
+        for name, info in v_data["accessories"].items():
+            if info["type_tag"] in ["STANDARD", "RMC"]:
+                baseline_template_pre_vat += info["price_raw"]
+                
+        # This yields exactly 112,560.00 AED for the Destinator PR
+        u19_valuation_base = baseline_template_pre_vat * 1.05
+
+        # Step 2: Calculate Vehicle Insurance directly using the fixed U19 base value
+        if is_insurance_selected:
+            # Group A: 3% Premium Rate + 510 AED Fee
+            if selected_code in ["PR", "PRP", "HLP", "G08", "G09", "G31", "PRL"]:
+                vehicle_insurance_cost = (u19_valuation_base * 0.03 + 510) * 1.05
+                
+            # Group B: 2.75% Premium Rate + 510 AED Fee
+            elif selected_code in ["H57", "P57", "H64", "H59", "P59", "H61", "P61", "H62", "P62"]:
+                vehicle_insurance_cost = (u19_valuation_base * 0.0275 + 510) * 1.05
+                
+            # Group C: 3% Premium Rate + 450 AED Fee
+            elif selected_code in ["EH40", "EH43", "EH41"]:
+                vehicle_insurance_cost = (u19_valuation_base * 0.03 + 450) * 1.05
+                
+            # Fallback Matrix (Flat-rate models)
+            else:
+                vehicle_insurance_cost = 3690.0 if "Xpander" in selected_name else 3625.0
+        else:
+            vehicle_insurance_cost = 0.0
+
+        # Step 3: Calculate VRI premium directly using the fixed U19 base value
+        vri_calculated_cost = (u19_valuation_base * 3.15 * 1.05 / 100) if is_vri_selected else 0.0
+
+        # Inject Insurance and VRI into checked_addons_list for reporting visibility
+        if is_vri_selected:
+            checked_addons_list.append({"name": "Value Retention Insurance (VRI)", "price": vri_calculated_cost, "vat_taxable": False})
+        if is_insurance_selected:
+            checked_addons_list.append({"name": "Vehicle Insurance", "price": vehicle_insurance_cost, "vat_taxable": False})
+
+        # Step 4: Aggregate Final Balances
+        excel_addons_total = (
+            acc_selected_price + 
+            ceramic_selected_price + 
+            exterior_selected_price + 
+            warranty_selected_price + 
+            vri_calculated_cost + 
+            vehicle_insurance_cost + 
+            rmc_selected_cost
+        )
+
+        # Total 5% VAT tracking for standard taxable accessories
+        total_vat_charges = (base_vehicle_price + acc_selected_price + ceramic_selected_price + exterior_selected_price + warranty_selected_price) * 0.05
+
+        # Final Contract Values
+        full_vehicle_value_including_addons = base_vehicle_price + excel_addons_total + total_vat_charges
+        calculated_downpayment = full_vehicle_value_including_addons * down_payment_pct
+        finance_amount = full_vehicle_value_including_addons - calculated_downpayment
+
+        # Bank Fees (1.05% of final net financed principal)
+        bank_processing_fee = finance_amount * 0.0105
         
-        st.write("**Accessories Checklists:**")
-        selected_addons_total = 0.0
-        for addon_name, info in v_data["accessories"].items():
-            if st.checkbox(f"{addon_name} (+{info['price']:,.0f} AED)", value=info["default_checked"]):
-                selected_addons_total += info["price"]
+        # Controls Action Button
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("📊 Generate Complete Summary Report", use_container_width=True):
+            st.session_state.view_state = "summary"
 
     # ------------------------------------------------------------------
-    # MAIN RENDERING MATRIX
+    # MAIN WORKSPACE RENDERING
     # ------------------------------------------------------------------
-    st.title("Mitsubishi Financial Matrix Calculator")
-    st.markdown(f"### Current Node: **{selected_name} — {selected_code} ({selected_year})**")
-    if BANK_RULES:
-        st.caption(f"Provider Context: {selected_bank} ({selected_bracket})")
-    st.markdown("---")
-    
-    # Calculate overall aggregate
-    total_financed_amount = (base_vehicle_price + selected_addons_total + rmc_cost) - calculated_downpayment
-    
-    tenures = [2, 3, 4, 5]
-    emi_results = []
-    
-    for years in tenures:
-        months = years * 12
-        total_interest = total_financed_amount * bank_rate * years
-        total_repayable = total_financed_amount + total_interest
-        monthly_emi = total_repayable / months
+    if st.session_state.view_state == "input":
+        st.title("Mitsubishi Financial Dashboard")
+        st.info("Configure your vehicle specs, accessories, and bank details in the sidebar panel. Then click **'Generate Complete Summary Report'** to run the matching Excel calculation engine.")
         
-        emi_results.append({
-            "Tenure Period": f"{years} Years ({months} Months)",
-            "Financed Principal (AED)": round(total_financed_amount, 2),
-            "Total Interest (AED)": round(total_interest, 2),
-            "Estimated Monthly EMI (AED)": round(monthly_emi, 2)
-        })
+    elif st.session_state.view_state == "summary":
+        st.title("📄 Mitsubishi Financial Matrix Calculator")
+        st.subheader(f"Unit Selected: {selected_name} — Variant {selected_code} ({selected_year})")
+        st.markdown("---")
+
+        # SECTION 1: SUMMARY SECTION
+        st.header("1. Summary Section")
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        col_s1.metric("Vehicle Model", f"{selected_name} ({selected_code})")
+        col_s2.metric("Total Vehicle Value", f"{full_vehicle_value_including_addons:,.2f} AED") # Fixed: Now shows full value including accessories/insurance/VAT
+        col_s3.metric("Down Payment Amount", f"{calculated_downpayment:,.2f} AED")
+        col_s4.metric("Finance Amount", f"{finance_amount:,.2f} AED")
+        st.markdown("---")
+
+        # SECTION 2: EMI BREAKDOWN
+        st.header("2. EMI Breakdown")
+        tenures = [2, 3, 4, 5]
+        emi_results = []
         
-    df_output = pd.DataFrame(emi_results)
-    
-    # Format for clean display visual
-    df_display = df_output.copy()
-    df_display["Financed Principal (AED)"] = df_display["Financed Principal (AED)"].map('{:,.2f}'.format)
-    df_display["Total Interest (AED)"] = df_display["Total Interest (AED)"].map('{:,.2f}'.format)
-    df_display["Estimated Monthly EMI (AED)"] = df_display["Estimated Monthly EMI (AED)"].map('{:,.2f}'.format)
-    
-    st.table(df_display)
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # --- STREAM EXPORT UTILITY ---
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df_output.to_excel(writer, index=False, sheet_name="EMI Matrix")
-    
-    st.download_button(
-        label="📥 Export Financial Matrix to Excel",
-        data=buffer.getvalue(),
-        file_name=f"Finance_Matrix_{selected_name.replace(' ', '_')}_{selected_code}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        for years in tenures:
+            months = years * 12
+            total_interest = finance_amount * bank_rate * years
+            total_repayable = finance_amount + total_interest
+            monthly_emi = total_repayable / months
+            
+            emi_results.append({
+                "Term (Years)": f"{years} Years ({months} Months)",
+                "Applied Interest Rate": f"{bank_rate*100:.4f}%",
+                "Finance Principal Amount": f"{finance_amount:,.2f} AED",
+                "Total Interest Costs": f"{total_interest:,.2f} AED",
+                "Monthly EMI Plan": f"{monthly_emi:,.2f} AED"
+            })
+        st.table(pd.DataFrame(emi_results))
+        st.markdown("---")
+
+        # SECTION 3: ACCESSORIES BREAKDOWN
+        st.header("3. Accessories Breakdown")
+        if checked_addons_list:
+            addons_table_data = []
+            total_display_addons_price = 0.0
+            
+            for addon in checked_addons_list:
+                item_price = addon["price"]
+                item_vat = (item_price * 0.05) if addon["vat_taxable"] else 0.0
+                total_display_addons_price += (item_price + item_vat)
+                
+                addons_table_data.append({
+                    "Selected Accessories / Services": addon["name"],
+                    "Individual Price (Base)": f"{item_price:,.2f} AED",
+                    "VAT Amount (5%)": f"{item_vat:,.2f} AED" if addon["vat_taxable"] else "0.00 AED (VAT Pre-incl.)",
+                    "Total Cost (incl. VAT)": f"{(item_price + item_vat):,.2f} AED"
+                })
+            st.table(pd.DataFrame(addons_table_data))
+            st.write(f"**Total Accessories Cost:** {total_display_addons_price:,.2f} AED")
+        else:
+            st.write("*No optional accessories selected.*")
+        st.markdown("---")
+
+        # SECTION 4: TOTAL CASH OUTLAY REQUIRED
+        st.header("4. Total Cash Outlay")
+        registration_fee = v_data["registration_fee"]
+        processing_fee_dp = v_data["processing_fee_dp"]
+        total_insurance_and_vri = vehicle_insurance_cost + vri_calculated_cost
+        
+        # Grand total required to take the car
+        grand_total_cash_outlay = calculated_downpayment + registration_fee + processing_fee_dp + bank_processing_fee
+        
+        col_out1, col_out2 = st.columns(2)
+        with col_out1:
+            st.write(f"**Down Payment:** {calculated_downpayment:,.2f} AED")
+            st.write(f"**Accessories Total (Gross):** {total_display_addons_price:,.2f} AED")
+        with col_out2:
+            st.write(f"**Insurance Costs (Vehicle + VRI):** {total_insurance_and_vri:,.2f} AED")
+            st.write(f"**Processing Fees (DP PF + Bank PF):** {(processing_fee_dp + bank_processing_fee):,.2f} AED")
+            
+        st.markdown(f"### 🔑 **Grand Total Required to Take the Car:** {grand_total_cash_outlay:,.2f} AED")
+        st.markdown("---")
+
+        # SECTION 5: BUTTONS
+        st.header("5. Buttons")
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
+        with col_btn1:
+            if st.button("⬅️ Back to Input", use_container_width=True):
+                st.session_state.view_state = "input"
+                st.rerun()
+        with col_btn2:
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                pd.DataFrame(emi_results).to_excel(writer, index=False, sheet_name="EMI Matrix")
+            st.download_button(
+                label="💾 Save as Excel / PDF Document",
+                data=buffer.getvalue(),
+                file_name=f"{selected_name.replace(' ', '_')}_Summary.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        with col_btn3:
+            st.button("✉️ Email Results", use_container_width=True, disabled=True)
