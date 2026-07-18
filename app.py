@@ -284,6 +284,14 @@ else:
         available_names = sorted(list(VEHICLE_CATALOG[selected_year].keys()))
         selected_name = st.selectbox("Vehicle Name:", available_names)
         
+        # ------------------------------------------------------------------
+        # DYNAMIC VEHICLE IMAGE DISPLAY (SIDEBAR PREVIEW ENGINE)
+        # ------------------------------------------------------------------
+        if selected_name in VEHICLE_IMAGES:
+            img_path = VEHICLE_IMAGES[selected_name]
+            if os.path.exists(img_path):
+                st.image(img_path, caption=f"Mitsubishi {selected_name}", use_container_width=True)
+        
         if selected_name:
             available_codes = sorted(list(VEHICLE_CATALOG[selected_year][selected_name].keys()))
             selected_code = st.selectbox("Variant Code:", available_codes)
