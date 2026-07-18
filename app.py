@@ -5,6 +5,23 @@ import os
 import io
 import re
 
+# --- IMAGE HELPER FUNCTION ---
+def get_vehicle_image(model_name, variant_code=None):
+    folder = "images"
+    # First, try to find a variant-specific image (e.g., Xpander_XC.png)
+    if variant_code:
+        for ext in [".png", ".jpg", ".jpeg"]:
+            path = os.path.join(folder, f"{model_name}_{variant_code}{ext}")
+            if os.path.exists(path):
+                return path
+    
+    # Second, fallback to the general model image (e.g., Xpander.png)
+    for ext in [".png", ".jpg", ".jpeg"]:
+        path = os.path.join(folder, f"{model_name}{ext}")
+        if os.path.exists(path):
+            return path
+    return None
+    
 # Set configuration at the absolute top
 st.set_page_config(page_title="Mitsubishi Financial Matrix Calculator", layout="wide")
 
@@ -269,6 +286,28 @@ else:
         selected_year = st.selectbox("Model Year:", sorted(list(VEHICLE_CATALOG.keys())))
         available_names = sorted(list(VEHICLE_CATALOG[selected_year].keys()))
         selected_name = st.selectbox("Vehicle Name:", available_names)
+
+       if selected_name:
+        available_codes = sorted(list(VEHICLE_CATALOG[selected_year][selected_name].keys()))
+        selected_code = st.selectbox("Variant Code:", available_codes)
+        v_data = VEHICLE_CATALOG[selected_year][selected_name][selected_code]
+        
+        # --- NEW VARIANT-AWARE IMAGE LOGIC ---
+        img_path = get_vehicle_image(selected_name, selected_code)
+        if img_path:
+            st.image(img_path, use_container_width=True)
+        else:
+            st.warning(f"Image for {selected_name} ({selected_code}) not found.")
+        # -------------------------------------
+    else:
+        st.stop()
+        
+    if selected_name:
+        available_codes = sorted(list(VEHICLE_CATALOG[selected_year][selected_name].keys()))
+        selected_code = st.selectbox("Variant Code:", available_codes)
+        v_data = VEHICLE_CATALOG[selected_year][selected_name][selected_code]
+    else:
+        st.stop()
         
         if selected_name:
             available_codes = sorted(list(VEHICLE_CATALOG[selected_year][selected_name].keys()))
