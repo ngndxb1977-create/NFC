@@ -264,6 +264,7 @@ VEHICLE_IMAGES = {
     "ASX": "asx.png.png",
     "Eclipse Cross": "eclipse_cross.png.png",
     "Xpander": "xpander.png.png",
+    "Xpander Cross": "eclipse_cross.png.png", # Map XC to use the correct Cross file
     "Outlander": "outlander.png.png",
     "Montero Sport": "montero.png.png",
     "Destinator": "destinator.png.png"
@@ -304,13 +305,17 @@ else:
             st.stop()
 
         # ------------------------------------------------------------------
-        # ROBUST SIDEBAR IMAGE DISPLAY ENGINE
+        # ROBUST SIDEBAR IMAGE DISPLAY ENGINE (VARIANT SENSITIVE)
         # ------------------------------------------------------------------
-        if selected_name in VEHICLE_IMAGES:
-            img_file = VEHICLE_IMAGES[selected_name]
+        # Check if variant is Xpander Cross (XC)
+        lookup_name = "Xpander Cross" if (selected_name == "Xpander" and str(selected_code).strip().upper() == "XC") else selected_name
+        
+        if lookup_name in VEHICLE_IMAGES:
+            img_file = VEHICLE_IMAGES[lookup_name]
             resolved_path = find_valid_image_path(img_file)
             if resolved_path:
-                st.image(resolved_path, caption=f"Mitsubishi {selected_name}", use_container_width=True)
+                caption_name = "Xpander Cross" if lookup_name == "Xpander Cross" else selected_name
+                st.image(resolved_path, caption=f"Mitsubishi {caption_name}", use_container_width=True)
             else:
                 st.sidebar.error(f"⚠️ Missing: Put '{img_file}' in your 'images' folder.")
             
@@ -432,9 +437,10 @@ else:
         st.title("📄 Mitsubishi Financial Matrix Calculator")
         st.subheader(f"Unit Selected: {selected_name} — Variant {selected_code} ({selected_year})")
         
-        # MAIN SUMMARY WINDOW IMAGE DISPLAY ENGINE
-        if selected_name in VEHICLE_IMAGES:
-            img_file = VEHICLE_IMAGES[selected_name]
+        # MAIN SUMMARY WINDOW IMAGE DISPLAY ENGINE (VARIANT SENSITIVE)
+        lookup_name = "Xpander Cross" if (selected_name == "Xpander" and str(selected_code).strip().upper() == "XC") else selected_name
+        if lookup_name in VEHICLE_IMAGES:
+            img_file = VEHICLE_IMAGES[lookup_name]
             resolved_path = find_valid_image_path(img_file)
             if resolved_path:
                 st.image(resolved_path, width=420)
