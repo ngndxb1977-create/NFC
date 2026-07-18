@@ -264,7 +264,7 @@ VEHICLE_IMAGES = {
     "ASX": "asx.png.png",
     "Eclipse Cross": "eclipse_cross.png.png",
     "Xpander": "xpander.png.png",
-    "Xpander Cross": "eclipse_cross.png.png", # Map XC to use the correct Cross file
+    "Xpander Cross": "xpander_cross.png.png", # Linked correctly to your Xpander Cross asset
     "Outlander": "outlander.png.png",
     "Montero Sport": "montero.png.png",
     "Destinator": "destinator.png.png"
@@ -307,7 +307,7 @@ else:
         # ------------------------------------------------------------------
         # ROBUST SIDEBAR IMAGE DISPLAY ENGINE (VARIANT SENSITIVE)
         # ------------------------------------------------------------------
-        # Check if variant is Xpander Cross (XC)
+        # Dynamic switch if XC variant is picked under Xpander
         lookup_name = "Xpander Cross" if (selected_name == "Xpander" and str(selected_code).strip().upper() == "XC") else selected_name
         
         if lookup_name in VEHICLE_IMAGES:
