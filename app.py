@@ -94,7 +94,7 @@ def get_clean_model_name(raw_name):
     elif 'XPANDER' in raw_name_upper: return 'Xpander'
     elif 'OUTLANDER' in raw_name_upper: return 'Outlander'
     elif 'MONTERO' in raw_name_upper: return 'Montero Sport'
-    elif 'DESTINATOR' in raw_name_upper: return 'Destinator'
+    elif 'DESTINATOR' in raw_name_upper or 'DST' in raw_name_upper or 'DES' in raw_name_upper: return 'Destinator'
     return raw_name
 
 def normalize_bracket_string(raw_val):
@@ -187,7 +187,8 @@ def load_all_vehicle_data(vehicle_file_path):
 
     xls = pd.ExcelFile(vehicle_file_path)
     for sheet in xls.sheet_names:
-        if sheet in ['Structure', 'MY-2025', 'MY-2026', 'Combined 2025-2026', 'Bank Details', 'RMC']: 
+        # Strictly ignore configuration metadata tabs without skipping variant tables
+        if sheet.strip() in ['Structure', 'Bank Details', 'RMC'] or 'COMBINED' in sheet.upper(): 
             continue
         try:
             df = pd.read_excel(xls, sheet_name=sheet, header=None)
@@ -264,7 +265,7 @@ VEHICLE_IMAGES = {
     "ASX": "asx.png.png",
     "Eclipse Cross": "eclipse_cross.png.png",
     "Xpander": "xpander.png.png",
-    "Xpander Cross": "xpander_cross.png.png", # Linked correctly to your Xpander Cross asset
+    "Xpander Cross": "xpander_cross.png.png",
     "Outlander": "outlander.png.png",
     "Montero Sport": "montero.png.png",
     "Destinator": "destinator.png.png"
@@ -307,7 +308,6 @@ else:
         # ------------------------------------------------------------------
         # ROBUST SIDEBAR IMAGE DISPLAY ENGINE (VARIANT SENSITIVE)
         # ------------------------------------------------------------------
-        # Dynamic switch if XC variant is picked under Xpander
         lookup_name = "Xpander Cross" if (selected_name == "Xpander" and str(selected_code).strip().upper() == "XC") else selected_name
         
         if lookup_name in VEHICLE_IMAGES:
@@ -437,7 +437,6 @@ else:
         st.title("📄 Mitsubishi Financial Matrix Calculator")
         st.subheader(f"Unit Selected: {selected_name} — Variant {selected_code} ({selected_year})")
         
-        # MAIN SUMMARY WINDOW IMAGE DISPLAY ENGINE (VARIANT SENSITIVE)
         lookup_name = "Xpander Cross" if (selected_name == "Xpander" and str(selected_code).strip().upper() == "XC") else selected_name
         if lookup_name in VEHICLE_IMAGES:
             img_file = VEHICLE_IMAGES[lookup_name]
