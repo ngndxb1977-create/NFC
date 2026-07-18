@@ -6,7 +6,6 @@ import io
 import re
 
 # --- INITIALIZE SESSION STATE ---
-# This makes sure the app never crashes because a variable is "missing"
 if 'view_state' not in st.session_state:
     st.session_state.view_state = "config"
 if 'base_vehicle_price' not in st.session_state:
@@ -19,18 +18,24 @@ if 'rmc_selected_cost' not in st.session_state:
 # --- IMAGE HELPER FUNCTION ---
 def get_vehicle_image(model_name, variant_code=None):
     folder = "images"
-    # First, try to find a variant-specific image (e.g., Xpander_XC.png)
-    if variant_code:
-        for ext in [".png", ".jpg", ".jpeg"]:
-            path = os.path.join(folder, f"{model_name}_{variant_code}{ext}")
+    
+    # Clean and normalize names to match repository snake_case naming scheme
+    model_clean = model_name.lower().strip()
+    model_clean = model_clean.replace(" cross", "_cross").replace(" sport", "")
+    
+    variant_clean = f"_{variant_code.lower().strip()}" if variant_code else ""
+    
+    # Extensions matching your repository structure (.png.png double extension)
+    for ext in [".png.png", ".png", ".jpg", ".jpeg"]:
+        if variant_code:
+            path = os.path.join(folder, f"{model_clean}{variant_clean}{ext}")
             if os.path.exists(path):
                 return path
                 
-    # Second, fallback to the general model image (e.g., Xpander.png)
-    for ext in [".png", ".jpg", ".jpeg"]:
-        path = os.path.join(folder, f"{model_name}{ext}")
+        path = os.path.join(folder, f"{model_clean}{ext}")
         if os.path.exists(path):
             return path
+            
     return None
 
 # Set configuration at the absolute top
@@ -133,7 +138,7 @@ def normalize_bracket_string(raw_val):
     return val
 
 # ------------------------------------------------------------------
-# MASTER EXCEL EXTRACTION ENGINE (INTELLIGENT COLUMN LOCATOR)
+# MASTER EXCEL EXTRACTION ENGINE
 # ------------------------------------------------------------------
 @st.cache_data
 def load_supplementary_data(file_path):
@@ -286,7 +291,6 @@ FILE_SUPPLEMENT = "Bank & RMC Details.xlsx"
 VEHICLE_CATALOG = load_all_vehicle_data(FILE_VEHICLES)
 BANK_RULES, RMC_RULES = load_supplementary_data(FILE_SUPPLEMENT)
 
-# Placeholders for down payment options and structural fees
 finance_dp_option = False
 dp_processing_fee = 0.0
 bank_processing_fee = 0.0
@@ -381,7 +385,7 @@ else:
         if st.button("Generate Summary", use_container_width=True):
             st.session_state.view_state = "summary"
 
-    # --- NOW PASTE YOUR CALCULATIONS HERE (NO INDENTATION) ---
+    # --- CALCULATIONS ENGINE BLOCK ---
     full_vehicle_value_including_addons = (
         st.session_state.base_vehicle_price + 
         st.session_state.acc_selected_price + 
@@ -393,7 +397,7 @@ else:
     # ------------------------------------------------------------------
     # MAIN WORKSPACE RENDERING
     # ------------------------------------------------------------------
-    if st.session_state.view_state == "input":
+    if st.session_state.view_state == "config" or st.session_state.view_state == "input":
         st.title("Mitsubishi Financial Dashboard")
         st.info("Configure variables in the sidebar panel. Then click **'Generate Summary'** to view the calculation report.")
         
@@ -410,7 +414,7 @@ else:
         col_s3.metric("Vehicle Finance Amount", f"{finance_amount:,.2f} AED")
         st.markdown("---")
         
-        # SECTION 2: EMI BREAKDOWN MATRIX (SEPARATED TABLES ONLY)
+        # SECTION 2: EMI BREAKDOWN MATRIX
         st.header("2. Loan Installment Breakdowns")
         st.subheader("🟢 Primary Asset Vehicle Financing")
         tenures = [1, 2, 3, 4, 5]
@@ -428,7 +432,6 @@ else:
             })
         st.table(pd.DataFrame(vehicle_emi_results))
         
-        # Down Payment Loan Table (Displays all 3 options automatically if opted)
         if finance_dp_option:
             st.markdown("<br>", unsafe_allow_html=True)
             st.subheader("🔵 Down Payment Loan Financing Options")
@@ -528,7 +531,7 @@ else:
         col_space_left, col_btn1, col_btn2, col_space_right = st.columns([1, 2, 2, 1])
         with col_btn1:
             if st.button("⬅️ Back to Input", use_container_width=True):
-                st.session_state.view_state = "input"
+                st.session_state.view_state = "config"
                 st.rerun()
         with col_btn2:
             buffer = io.BytesIO()
