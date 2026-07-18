@@ -5,6 +5,17 @@ import os
 import io
 import re
 
+# --- INITIALIZE SESSION STATE ---
+# This makes sure the app never crashes because a variable is "missing"
+if 'view_state' not in st.session_state:
+    st.session_state.view_state = "config"
+if 'base_vehicle_price' not in st.session_state:
+    st.session_state.base_vehicle_price = 0.0
+if 'acc_selected_price' not in st.session_state:
+    st.session_state.acc_selected_price = 0.0
+if 'rmc_selected_cost' not in st.session_state:
+    st.session_state.rmc_selected_cost = 0.0
+        
 # --- IMAGE HELPER FUNCTION ---
 def get_vehicle_image(model_name, variant_code=None):
     folder = "images"
@@ -320,23 +331,20 @@ else:
     st.markdown("---")
     st.subheader("⚙️ Calculations Adjuster")
     
-    # 1. Capture the input and save it to session_state
+    # REPLACE your old base_vehicle_price line with this:
     st.session_state.base_vehicle_price = st.number_input("Base Vehicle Price (AED):", value=v_data["base_price"], step=500.0)
     
-    # 2. Capture the slider and save it to session_state
-    st.session_state.down_payment_pct = st.slider("Down Payment Percentage (%):", 0, 100, 20) / 100.0
-
-    st.markdown("---")
-    st.subheader("💳 Down Payment Financing Plan")
-    finance_dp_option = st.toggle("Finance the Down Payment?", value=False)
+    down_payment_pct = st.slider("Down Payment Percentage (%):", 0, 100, 20) / 100.0
+    st.session_state.down_payment_pct = down_payment_pct # Store this too!
 
     st.markdown("---")
     st.subheader("➕ Custom Accessories Checklists")
-    acc_selected_price = 0.0   
-    ceramic_selected_price = 0.0 
-    foppfgoldpackage_selected_price = 0.0 
-    warranty_selected_price = 0.0 
-    rmc_selected_cost = 0.0      
+    
+    # ... (Your logic for acc_selected_price, etc.) ...
+    
+    # AT THE END OF YOUR SIDEBAR, make sure you save your final calculated prices:
+    st.session_state.acc_selected_price = acc_selected_price
+    st.session_state.rmc_selected_cost = rmc_selected_cost
     
     override_rmc_active = (RMC_RULES and selected_code in RMC_RULES)
     checked_addons_list = []
@@ -372,6 +380,26 @@ else:
     
     if st.button("Generate Summary", use_container_width=True):
         st.session_state.view_state = "summary"
+
+    # ... (Your sidebar code ends here)
+    st.session_state.rmc_selected_cost = rmc_selected_cost
+    
+    # Don't forget this! If you have a button, it stays inside the sidebar
+    if st.button("Generate Summary", use_container_width=True):
+        st.session_state.view_state = "summary"
+
+# --- SIDEBAR ENDS HERE ---
+# --- NOW PASTE YOUR CALCULATIONS HERE (NO INDENTATION) ---
+
+full_vehicle_value_including_addons = (
+    st.session_state.base_vehicle_price + 
+    st.session_state.acc_selected_price + 
+    st.session_state.rmc_selected_cost
+)
+
+# If 'col_s1' was defined earlier in your layout, use it here:
+if st.session_state.get("view_state") == "summary":
+    col_s1.metric("Total Vehicle Value", f"{full_vehicle_value_including_addons:,.2f} AED")
 
     # ------------------------------------------------------------------
     # MAIN WORKSPACE RENDERING
