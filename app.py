@@ -282,10 +282,10 @@ if not VEHICLE_CATALOG["2025"] and not VEHICLE_CATALOG["2026"]:
     st.error(f"Could not load vehicle datasets from '{FILE_VEHICLES}'.")
 else:
     with st.sidebar:
-    st.header("🚗 Configuration Console")
-    selected_year = st.selectbox("Model Year:", sorted(list(VEHICLE_CATALOG.keys())))
-    available_names = sorted(list(VEHICLE_CATALOG[selected_year].keys()))
-    selected_name = st.selectbox("Vehicle Name:", available_names)
+        st.header("🚗 Configuration Console")
+        selected_year = st.selectbox("Model Year:", sorted(list(VEHICLE_CATALOG.keys())))
+        available_names = sorted(list(VEHICLE_CATALOG[selected_year].keys()))
+        selected_name = st.selectbox("Vehicle Name:", available_names)
 
     if selected_name:
         available_codes = sorted(list(VEHICLE_CATALOG[selected_year][selected_name].keys()))
