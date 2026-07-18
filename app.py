@@ -256,18 +256,30 @@ FILE_VEHICLES = "NFC New VRI Project (2) (2).xlsx"
 FILE_SUPPLEMENT = "Bank & RMC Details.xlsx"
 
 # ==========================================
-# VEHICLE IMAGES MAP
+# VEHICLE IMAGES MAP (Matches exact GitHub filenames)
 # ==========================================
 VEHICLE_IMAGES = {
-    "Attrage": "images/attrage.png",
-    "Mirage": "images/mirage.png",
-    "ASX": "images/asx.png",
-    "Eclipse Cross": "images/eclipse_cross.png",
-    "Xpander": "images/xpander.png",
-    "Outlander": "images/outlander.png",
-    "Montero Sport": "images/montero_sport.png",
-    "Destinator": "images/destinator.png"
+    "Attrage": "attrage.png.png",
+    "Mirage": "mirage.png.png",
+    "ASX": "asx.png.png",
+    "Eclipse Cross": "eclipse_cross.png.png",
+    "Xpander": "xpander.png.png",
+    "Outlander": "outlander.png.png",
+    "Montero Sport": "montero.png.png",
+    "Destinator": "destinator.png.png"
 }
+
+def find_valid_image_path(filename):
+    possible_paths = [
+        os.path.join("images", filename),
+        os.path.join("Images", filename),
+        os.path.join("images", filename.replace(".png.png", ".PNG.PNG")),
+        os.path.join("Images", filename.replace(".png.png", ".PNG.PNG"))
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+    return None
 
 VEHICLE_CATALOG = load_all_vehicle_data(FILE_VEHICLES)
 BANK_RULES, RMC_RULES = load_supplementary_data(FILE_SUPPLEMENT)
@@ -292,12 +304,15 @@ else:
             st.stop()
 
         # ------------------------------------------------------------------
-        # FIXED: DYNAMIC VEHICLE IMAGE DISPLAY PLACED SAFELY AFTER V_DATA
+        # ROBUST SIDEBAR IMAGE DISPLAY ENGINE
         # ------------------------------------------------------------------
         if selected_name in VEHICLE_IMAGES:
-            img_path = VEHICLE_IMAGES[selected_name]
-            if os.path.exists(img_path):
-                st.image(img_path, caption=f"Mitsubishi {selected_name}", use_container_width=True)
+            img_file = VEHICLE_IMAGES[selected_name]
+            resolved_path = find_valid_image_path(img_file)
+            if resolved_path:
+                st.image(resolved_path, caption=f"Mitsubishi {selected_name}", use_container_width=True)
+            else:
+                st.sidebar.error(f"⚠️ Missing: Put '{img_file}' in your 'images' folder.")
             
         st.markdown("---")
         st.subheader("🏦 Financial Provider Rates")
@@ -319,7 +334,6 @@ else:
         base_vehicle_price = st.number_input("Base Vehicle Price (AED):", value=v_data["base_price"], step=500.0)
         down_payment_pct = st.slider("Down Payment Percentage (%):", 0, 100, 20) / 100.0
 
-        # EXCEL EXACT DOWN PAYMENT FINANCE RULES
         st.markdown("---")
         st.subheader("💳 Down Payment Financing Plan")
         finance_dp_option = st.toggle("Finance the Down Payment?", value=False)
@@ -418,11 +432,12 @@ else:
         st.title("📄 Mitsubishi Financial Matrix Calculator")
         st.subheader(f"Unit Selected: {selected_name} — Variant {selected_code} ({selected_year})")
         
-        # DISPLAY IMAGE DYNAMICALLY BY SELECTED VEHICLE NAME
+        # MAIN SUMMARY WINDOW IMAGE DISPLAY ENGINE
         if selected_name in VEHICLE_IMAGES:
-            img_path = VEHICLE_IMAGES[selected_name]
-            if os.path.exists(img_path) or img_path.startswith(("http://", "https://")):
-                st.image(img_path, width=420)
+            img_file = VEHICLE_IMAGES[selected_name]
+            resolved_path = find_valid_image_path(img_file)
+            if resolved_path:
+                st.image(resolved_path, width=420)
                 
         st.markdown("---")
 
@@ -434,10 +449,9 @@ else:
         col_s3.metric("Vehicle Finance Amount", f"{finance_amount:,.2f} AED")
         st.markdown("---")
 
-        # SECTION 2: EMI BREAKDOWN MATRIX (SEPARATED TABLES ONLY)
+        # SECTION 2: EMI BREAKDOWN MATRIX
         st.header("2. Loan Installment Breakdowns")
         
-        # Primary Vehicle Loan Table (Always displayed standalone)
         st.subheader("🟢 Primary Asset Vehicle Financing")
         tenures = [1, 2, 3, 4, 5]
         vehicle_emi_results = []
@@ -456,14 +470,12 @@ else:
             })
         st.table(pd.DataFrame(vehicle_emi_results))
         
-        # Down Payment Loan Table (Displays all 3 options automatically)
         if finance_dp_option:
             st.markdown("<br>", unsafe_allow_html=True)
             st.subheader("🔵 Down Payment Loan Financing Options")
             vehicle_reservation_fee = v_data["reservation_fee"]
             dp_financed_base = max(0.0, calculated_downpayment - vehicle_reservation_fee)
             
-            # Define the 3 options
             dp_options = [
                 {"months": 3, "rate": 0.0000, "label": "3 Months (0.00% ROI)"},
                 {"months": 12, "rate": 0.0525, "label": "12 Months (5.25% ROI)"},
