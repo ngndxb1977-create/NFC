@@ -319,8 +319,12 @@ else:
     
     st.markdown("---")
     st.subheader("⚙️ Calculations Adjuster")
-    base_vehicle_price = st.number_input("Base Vehicle Price (AED):", value=v_data["base_price"], step=500.0)
-    down_payment_pct = st.slider("Down Payment Percentage (%):", 0, 100, 20) / 100.0
+    
+    # 1. Capture the input and save it to session_state
+    st.session_state.base_vehicle_price = st.number_input("Base Vehicle Price (AED):", value=v_data["base_price"], step=500.0)
+    
+    # 2. Capture the slider and save it to session_state
+    st.session_state.down_payment_pct = st.slider("Down Payment Percentage (%):", 0, 100, 20) / 100.0
 
     st.markdown("---")
     st.subheader("💳 Down Payment Financing Plan")
