@@ -23,6 +23,13 @@ def get_vehicle_image(model_name, variant_code=None):
     model_clean = model_name.lower().strip()
     model_clean = model_clean.replace(" cross", "_cross").replace(" sport", "")
     
+    v_code_clean = variant_code.upper().strip() if variant_code else ""
+    
+    # Hard exception mapping for variant code patterns matching standalone images
+    if model_clean == "xpander" and v_code_clean in ["XC", "CROSS"]:
+        model_clean = "xpander_cross"
+        variant_code = None  # Reset to look for base model image file directly
+        
     variant_clean = f"_{variant_code.lower().strip()}" if variant_code else ""
     
     # Extensions matching your repository structure (.png.png double extension)
