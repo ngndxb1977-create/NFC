@@ -187,7 +187,6 @@ def load_all_vehicle_data(vehicle_file_path):
 
     xls = pd.ExcelFile(vehicle_file_path)
     for sheet in xls.sheet_names:
-        # Strictly ignore configuration metadata tabs without skipping variant tables
         if sheet.strip() in ['Structure', 'Bank Details', 'RMC'] or 'COMBINED' in sheet.upper(): 
             continue
         try:
@@ -373,14 +372,16 @@ else:
                 checked = st.checkbox(f"{name} (+{info['price_raw']:,.2f} AED)", value=info["default_checked"], key=f"cb_{name}")
                 if checked:
                     rmc_selected_cost = info["price_raw"]
-                    checked_addons_list.append({"name": name, "price": rmc_selected_cost, "vat_taxable": False})
+                    # Modified to pass base value and taxable flag for uniformity
+                    checked_addons_list.append({"name": name, "price": rmc_selected_cost / 1.05, "vat_taxable": True})
 
         if override_rmc_active:
             rmc_packages = ["None"] + list(RMC_RULES[selected_code].keys())
             chosen_rmc = st.selectbox("Routine Maintenance Contract (RMC):", rmc_packages)
             if chosen_rmc != "None":
                 rmc_selected_cost = RMC_RULES[selected_code][chosen_rmc]
-                checked_addons_list.append({"name": f"Routine Maintenance Contract ({chosen_rmc})", "price": rmc_selected_cost, "vat_taxable": False})
+                # Modified to pass base value and taxable flag for uniformity
+                checked_addons_list.append({"name": f"Routine Maintenance Contract ({chosen_rmc})", "price": rmc_selected_cost / 1.05, "vat_taxable": True})
 
         u19_valuation_base = (base_vehicle_price + acc_selected_price + ceramic_selected_price + foppfgoldpackage_selected_price + warranty_selected_price + (rmc_selected_cost / 1.05)) * 1.05
 
