@@ -4,12 +4,13 @@ import numpy as np
 import os
 import io
 import re
+import base64
 
 # Set configuration at the absolute top
 st.set_page_config(page_title="Mitsubishi Financial Matrix Calculator", layout="wide")
 
 # ==========================================
-# CUSTOM UX/UI STYLING ENGINE (AMETHYSTA UPDATE)
+# CUSTOM UX/UI STYLING ENGINE
 # ==========================================
 st.markdown(
     """
@@ -105,8 +106,18 @@ def normalize_bracket_string(raw_val):
     val = val.replace("to", "-").replace("—", "-").replace("–", "-")
     return val
 
+def get_image_base64(image_path):
+    """Encodes image to Base64 so it prints reliably in standalone PDF/HTML reports."""
+    if image_path and os.path.exists(image_path):
+        with open(image_path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode()
+            ext = os.path.splitext(image_path)[1].lower().replace('.', '')
+            mime_type = "image/jpeg" if ext in ["jpg", "jpeg"] else "image/png"
+            return f"data:{mime_type};base64,{encoded_string}"
+    return None
+
 # ------------------------------------------------------------------
-# MASTER EXCEL EXTRACTION ENGINE (INTELLIGENT COLUMN LOCATOR)
+# MASTER EXCEL EXTRACTION ENGINE
 # ------------------------------------------------------------------
 @st.cache_data
 def load_supplementary_data(file_path):
@@ -256,7 +267,7 @@ FILE_VEHICLES = "NFC New VRI Project (2) (2).xlsx"
 FILE_SUPPLEMENT = "Bank & RMC Details.xlsx"
 
 # ==========================================
-# VEHICLE IMAGES MAP (Matches exact GitHub filenames)
+# VEHICLE IMAGES MAP
 # ==========================================
 VEHICLE_IMAGES = {
     "Attrage": "attrage.png.png",
@@ -275,7 +286,8 @@ def find_valid_image_path(filename):
         os.path.join("images", filename),
         os.path.join("Images", filename),
         os.path.join("images", filename.replace(".png.png", ".PNG.PNG")),
-        os.path.join("Images", filename.replace(".png.png", ".PNG.PNG"))
+        os.path.join("Images", filename.replace(".png.png", ".PNG.PNG")),
+        filename
     ]
     for path in possible_paths:
         if os.path.exists(path):
@@ -304,11 +316,9 @@ else:
         else:
             st.stop()
 
-        # ------------------------------------------------------------------
-        # ROBUST SIDEBAR IMAGE DISPLAY ENGINE (VARIANT SENSITIVE)
-        # ------------------------------------------------------------------
         lookup_name = "Xpander Cross" if (selected_name == "Xpander" and str(selected_code).strip().upper() == "XC") else selected_name
         
+        resolved_path = None
         if lookup_name in VEHICLE_IMAGES:
             img_file = VEHICLE_IMAGES[lookup_name]
             resolved_path = find_valid_image_path(img_file)
@@ -372,7 +382,6 @@ else:
                 checked = st.checkbox(f"{name} (+{info['price_raw']:,.2f} AED)", value=info["default_checked"], key=f"cb_{name}")
                 if checked:
                     rmc_selected_cost = info["price_raw"]
-                    # Modified to pass base value and taxable flag for uniformity
                     checked_addons_list.append({"name": name, "price": rmc_selected_cost / 1.05, "vat_taxable": True})
 
         if override_rmc_active:
@@ -380,7 +389,6 @@ else:
             chosen_rmc = st.selectbox("Routine Maintenance Contract (RMC):", rmc_packages)
             if chosen_rmc != "None":
                 rmc_selected_cost = RMC_RULES[selected_code][chosen_rmc]
-                # Modified to pass base value and taxable flag for uniformity
                 checked_addons_list.append({"name": f"Routine Maintenance Contract ({chosen_rmc})", "price": rmc_selected_cost / 1.05, "vat_taxable": True})
 
         u19_valuation_base = (base_vehicle_price + acc_selected_price + ceramic_selected_price + foppfgoldpackage_selected_price + warranty_selected_price + (rmc_selected_cost / 1.05)) * 1.05
@@ -413,6 +421,9 @@ else:
         if is_vri_selected: checked_addons_list.append({"name": "Vehicle Replacement Insurance (VRI)", "price": vri_calculated_cost, "vat_taxable": False})
         if is_insurance_selected: checked_addons_list.append({"name": "Vehicle Insurance", "price": vehicle_insurance_cost, "vat_taxable": False})
 
+        base_vehicle_vat = base_vehicle_price * 0.05
+        total_base_vehicle_price = base_vehicle_price + base_vehicle_vat
+
         excel_addons_total = (acc_selected_price + ceramic_selected_price + foppfgoldpackage_selected_price + warranty_selected_price + vri_calculated_cost + vehicle_insurance_cost + rmc_selected_cost)
         total_vat_charges = (base_vehicle_price + acc_selected_price + ceramic_selected_price + foppfgoldpackage_selected_price + warranty_selected_price) * 0.05
 
@@ -439,18 +450,30 @@ else:
         st.subheader(f"Unit Selected: {selected_name} — Variant {selected_code} ({selected_year})")
         
         lookup_name = "Xpander Cross" if (selected_name == "Xpander" and str(selected_code).strip().upper() == "XC") else selected_name
+        img_b64 = None
         if lookup_name in VEHICLE_IMAGES:
             img_file = VEHICLE_IMAGES[lookup_name]
             resolved_path = find_valid_image_path(img_file)
             if resolved_path:
                 st.image(resolved_path, width=420)
+                img_b64 = get_image_base64(resolved_path)
                 
         st.markdown("---")
 
-        # SECTION 1: SUMMARY SECTION
-        st.header("Financial Overview")
+        # SECTION 1: BASE VEHICLE PRICE & VAT BREAKDOWN
+        st.header("1. Base Vehicle Price & Tax Breakdown")
+        base_price_df = pd.DataFrame([{
+            "Vehicle Model / Variant": f"{selected_name} ({selected_code})",
+            "Base Unit Price (Excl. VAT)": f"{base_vehicle_price:,.2f} AED",
+            "VAT (5%)": f"{base_vehicle_vat:,.2f} AED",
+            "Total Unit Price (Incl. VAT)": f"{total_base_vehicle_price:,.2f} AED"
+        }])
+        st.table(base_price_df)
+
+        # FINANCIAL OVERVIEW METRICS
+        st.subheader("Financial Overview")
         col_s1, col_s2, col_s3 = st.columns(3)
-        col_s1.metric("Total Vehicle Value", f"{full_vehicle_value_including_addons:,.2f} AED") 
+        col_s1.metric("Total Vehicle Value (incl. Addons)", f"{full_vehicle_value_including_addons:,.2f} AED") 
         col_s2.metric("Gross Down Payment Req.", f"{calculated_downpayment:,.2f} AED")
         col_s3.metric("Vehicle Finance Amount", f"{finance_amount:,.2f} AED")
         st.markdown("---")
@@ -476,6 +499,7 @@ else:
             })
         st.table(pd.DataFrame(vehicle_emi_results))
         
+        dp_results = []
         if finance_dp_option:
             st.markdown("<br>", unsafe_allow_html=True)
             st.subheader("🔵 Down Payment Loan Financing Options")
@@ -488,7 +512,6 @@ else:
                 {"months": 24, "rate": 0.0630, "label": "24 Months (6.30% ROI)"}
             ]
             
-            dp_results = []
             for opt in dp_options:
                 total_interest = dp_financed_base * opt["rate"] * (opt["months"] / 12.0)
                 monthly_emi = (dp_financed_base + total_interest) / opt["months"]
@@ -506,8 +529,8 @@ else:
 
         # SECTION 3: ACCESSORIES BREAKDOWN
         st.header("3. Accessories Breakdown")
+        addons_table_data = []
         if checked_addons_list:
-            addons_table_data = []
             total_display_addons_price = 0.0
             for addon in checked_addons_list:
                 item_price = addon["price"]
@@ -580,7 +603,349 @@ else:
         
         st.markdown("<br>", unsafe_allow_html=True)
 
-        col_space_left, col_btn1, col_btn2, col_space_right = st.columns([1, 2, 2, 1])
+        # ==========================================
+        # GENERATE FULL-MATCH HTML/PRINT PDF REPORT
+        # ==========================================
+        img_html = f'<img src="{img_b64}" class="vehicle-img" alt="{selected_name}"/>' if img_b64 else '<div style="padding:20px; background:#eee; text-align:center; border-radius:6px;">[Image Not Available]</div>'
+        
+        vehicle_emi_rows = "".join([
+            f"<tr><td>{r['Asset Term (Years)']}</td><td>{r['Flat ROI %']}</td><td>{r['Principal Loan Block']}</td><td>{r['Total Interest Accrued']}</td><td><strong>{r['Monthly Vehicle EMI']}</strong></td></tr>"
+            for r in vehicle_emi_results
+        ])
+
+        dp_emi_rows = ""
+        if dp_results:
+            dp_emi_rows = f"""
+            <h3>🔵 Down Payment Loan Financing Options</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Term</th>
+                        <th>Financed Balance</th>
+                        <th>Total Interest</th>
+                        <th>Monthly EMI</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {"".join([f"<tr><td>{r['Term']}</td><td>{r['Financed Balance']}</td><td>{r['Total Interest']}</td><td><strong>{r['Monthly EMI']}</strong></td></tr>" for r in dp_results])}
+                </tbody>
+            </table>
+            """
+
+        addons_rows = ""
+        if addons_table_data:
+            addons_rows = "".join([
+                f"<tr><td>{r['Selected Accessories / Services']}</td><td>{r['Individual Price (Base)']}</td><td>{r['VAT Amount (5%)']}</td><td><strong>{r['Total Cost (incl. VAT)']}</strong></td></tr>"
+                for r in addons_table_data
+            ])
+        else:
+            addons_rows = '<tr><td colspan="4">No optional accessories selected.</td></tr>'
+
+        if finance_dp_option:
+            cash_outlay_detail = f"""
+            <p><strong>Showroom Reservation Fee:</strong> {v_data['reservation_fee']:,.2f} AED (Paid Upfront)</p>
+            <p><strong>Remaining Down Payment Balance:</strong> {max(0.0, calculated_downpayment - v_data['reservation_fee']):,.2f} AED (Financed via Loan Plan)</p>
+            """
+        else:
+            cash_outlay_detail = f"<p><strong>Full Down Payment Amount:</strong> {calculated_downpayment:,.2f} AED (Upfront Out-of-Pocket)</p>"
+
+        html_report = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mitsubishi Financial Matrix Report - {selected_name} ({selected_code})</title>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght=600;700&family=Amethysta&display=swap');
+    
+    body {{
+        font-family: 'Amethysta', serif;
+        color: #191919;
+        background-color: #FFFFFF;
+        padding: 30px;
+        line-height: 1.5;
+        max-width: 900px;
+        margin: 0 auto;
+    }}
+    .header {{
+        border-bottom: 3px solid #191919;
+        padding-bottom: 12px;
+        margin-bottom: 25px;
+    }}
+    h1 {{
+        font-family: 'Quicksand', sans-serif;
+        font-size: 26px;
+        margin: 0 0 6px 0;
+        color: #191919;
+    }}
+    .sub-title {{
+        font-family: 'Quicksand', sans-serif;
+        font-size: 15px;
+        color: #555555;
+        margin: 0;
+    }}
+    h2 {{
+        font-family: 'Amethysta', serif;
+        font-size: 18px;
+        color: #383838;
+        margin: 25px 0 12px 0;
+        border-bottom: 1px solid #DDD;
+        padding-bottom: 6px;
+    }}
+    h3 {{
+        font-family: 'Quicksand', sans-serif;
+        font-size: 14px;
+        color: #444444;
+        margin: 15px 0 10px 0;
+    }}
+    .top-container {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 25px;
+        gap: 20px;
+    }}
+    .meta-info p {{
+        margin: 4px 0;
+        font-size: 14px;
+    }}
+    .vehicle-img {{
+        max-width: 340px;
+        max-height: 200px;
+        object-fit: contain;
+        border-radius: 6px;
+    }}
+    .summary-cards {{
+        display: flex;
+        gap: 15px;
+        margin-bottom: 25px;
+    }}
+    .card {{
+        flex: 1;
+        background: #F4F0EA;
+        padding: 14px 16px;
+        border-radius: 6px;
+        border-left: 4px solid #191919;
+    }}
+    .card-label {{
+        font-family: 'Quicksand', sans-serif;
+        font-size: 11px;
+        text-transform: uppercase;
+        color: #555;
+        font-weight: 700;
+    }}
+    .card-value {{
+        font-family: 'Amethysta', serif;
+        font-size: 19px;
+        font-weight: bold;
+        margin-top: 6px;
+        color: #191919;
+    }}
+    table {{
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+        font-size: 13px;
+    }}
+    th, td {{
+        border: 1px solid #DDDDDD;
+        padding: 9px 12px;
+        text-align: left;
+    }}
+    th {{
+        background-color: #F4F0EA;
+        font-family: 'Quicksand', sans-serif;
+        font-weight: 700;
+        color: #383838;
+    }}
+    .outlay-grid {{
+        display: flex;
+        gap: 20px;
+        margin-bottom: 15px;
+        font-size: 13px;
+    }}
+    .outlay-col {{
+        flex: 1;
+    }}
+    .outlay-col p {{
+        margin: 5px 0;
+    }}
+    .cash-box {{
+        background-color: #F4F0EA;
+        padding: 16px;
+        border-radius: 6px;
+        border-left: 4px solid #191919;
+        margin-top: 15px;
+        margin-bottom: 25px;
+    }}
+    .cash-title {{
+        font-family: 'Quicksand', sans-serif;
+        font-weight: 700;
+        font-size: 12px;
+        text-transform: uppercase;
+        color: #555;
+    }}
+    .cash-val {{
+        font-family: 'Amethysta', serif;
+        font-size: 24px;
+        font-weight: bold;
+        margin-top: 4px;
+        color: #191919;
+    }}
+    .checklist {{
+        background-color: #F4F0EA;
+        padding: 16px 20px;
+        border-radius: 6px;
+        border-left: 4px solid #191919;
+        font-size: 12px;
+    }}
+    .checklist ul {{
+        margin: 8px 0 0 0;
+        padding-left: 20px;
+        line-height: 1.6;
+    }}
+    .print-btn {{
+        background-color: #191919;
+        color: white;
+        padding: 10px 22px;
+        border: none;
+        border-radius: 6px;
+        font-family: 'Quicksand', sans-serif;
+        font-weight: bold;
+        cursor: pointer;
+        margin-bottom: 20px;
+        font-size: 14px;
+    }}
+    @media print {{
+        .no-print {{ display: none !important; }}
+        body {{ padding: 0; max-width: 100%; }}
+        .card, .cash-box, .checklist {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+    }}
+</style>
+</head>
+<body>
+
+<button class="print-btn no-print" onclick="window.print()">🖨️ Print / Save as PDF</button>
+
+<div class="header">
+    <h1>📄 Mitsubishi Financial Matrix Report</h1>
+    <div class="sub-title">Unit Selected: <strong>{selected_name} — Variant {selected_code} ({selected_year})</strong></div>
+</div>
+
+<div class="top-container">
+    <div class="meta-info">
+        <p><strong>Financial Institution:</strong> {selected_bank}</p>
+        <p><strong>Flat Interest Rate (ROI):</strong> {bank_rate*100:.4f}%</p>
+        <p><strong>Down Payment Ratio:</strong> {down_payment_pct*100:.0f}%</p>
+    </div>
+    <div>
+        {img_html}
+    </div>
+</div>
+
+<h2>1. Base Vehicle Price & Tax Breakdown</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Vehicle Model / Variant</th>
+            <th>Base Unit Price (Excl. VAT)</th>
+            <th>VAT (5%)</th>
+            <th>Total Unit Price (Incl. VAT)</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>{selected_name} ({selected_code})</td>
+            <td>{base_vehicle_price:,.2f} AED</td>
+            <td>{base_vehicle_vat:,.2f} AED</td>
+            <td><strong>{total_base_vehicle_price:,.2f} AED</strong></td>
+        </tr>
+    </tbody>
+</table>
+
+<div class="summary-cards">
+    <div class="card">
+        <div class="card-label">Total Vehicle Value (incl. Addons)</div>
+        <div class="card-value">{full_vehicle_value_including_addons:,.2f} AED</div>
+    </div>
+    <div class="card">
+        <div class="card-label">Gross Down Payment Req.</div>
+        <div class="card-value">{calculated_downpayment:,.2f} AED</div>
+    </div>
+    <div class="card">
+        <div class="card-label">Vehicle Finance Amount</div>
+        <div class="card-value">{finance_amount:,.2f} AED</div>
+    </div>
+</div>
+
+<h2>2. Loan Installment Breakdowns</h2>
+<h3>🟢 Primary Asset Vehicle Financing</h3>
+<table>
+    <thead>
+        <tr>
+            <th>Asset Term (Years)</th>
+            <th>Flat ROI %</th>
+            <th>Principal Loan Block</th>
+            <th>Total Interest Accrued</th>
+            <th>Monthly Vehicle EMI</th>
+        </tr>
+    </thead>
+    <tbody>
+        {vehicle_emi_rows}
+    </tbody>
+</table>
+
+{dp_emi_rows}
+
+<h2>3. Accessories Breakdown</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Selected Accessories / Services</th>
+            <th>Individual Price (Base)</th>
+            <th>VAT Amount (5%)</th>
+            <th>Total Cost (incl. VAT)</th>
+        </tr>
+    </thead>
+    <tbody>
+        {addons_rows}
+    </tbody>
+</table>
+
+<h2>4. Out-of-Pocket Cash Outlay Summary</h2>
+<div class="outlay-grid">
+    <div class="outlay-col">
+        {cash_outlay_detail}
+        <p><strong>Registration Documentation Fee:</strong> {registration_fee:,.2f} AED</p>
+    </div>
+    <div class="outlay-col">
+        <p><strong>DP Processing Fee (DP PF):</strong> {dp_processing_fee:,.2f} AED</p>
+        <p><strong>Bank Processing Fee (Bank PF):</strong> {bank_processing_fee:,.2f} AED</p>
+    </div>
+</div>
+
+<div class="cash-box">
+    <div class="cash-title">🔑 Actual Upfront Cash Required at Showroom Handover</div>
+    <div class="cash-val">{grand_total_cash_outlay:,.2f} AED</div>
+</div>
+
+<h2>5. Application Requirements & Disclosures</h2>
+<div class="checklist">
+    <strong>📋 Required Documentation Checklist:</strong>
+    <ul>
+        <li>Passport Copy, Digital Visa & Address Page For Indian Passport, Page #44 For Philippines Passport.</li>
+        <li>Emirates ID Card Copy Both Sides.</li>
+        <li>Labour Card / Free Zone / Employer ID.</li>
+        <li>Copy of the UAE Driver's License Both Sides.</li>
+        <li>Current Dated Salary Certificate from The Employer.</li>
+        <li>Pay Slips For The Last 3 Months - [If Variance In Salary].</li>
+        <li>IBAN.</li>
+    </ul>
+</div>
+
+</body>
+</html>"""
+
+        col_space_left, col_btn1, col_btn2, col_btn3, col_space_right = st.columns([1, 2, 2, 2, 1])
         with col_btn1:
             if st.button("⬅️ Back to Input", use_container_width=True):
                 st.session_state.view_state = "input"
@@ -590,9 +955,17 @@ else:
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 pd.DataFrame(vehicle_emi_results).to_excel(writer, index=False, sheet_name="Vehicle Loan Matrix")
             st.download_button(
-                label="💾 Save as Excel Spreadsheet",
+                label="💾 Save Excel",
                 data=buffer.getvalue(),
                 file_name=f"{selected_name.replace(' ', '_')}_Summary.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        with col_btn3:
+            st.download_button(
+                label="🖨️ Download HTML PDF/Print",
+                data=html_report,
+                file_name=f"{selected_name.replace(' ', '_')}_Financial_Report.html",
+                mime="text/html",
                 use_container_width=True
             )
