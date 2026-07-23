@@ -596,7 +596,8 @@ else:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
-                # 🔹 Build full HTML report
+                
+    # 🔹 Build full HTML report
     html_report = f"""
     <!DOCTYPE html>
     <html>
