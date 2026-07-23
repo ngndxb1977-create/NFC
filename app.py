@@ -253,7 +253,6 @@ def load_all_vehicle_data(vehicle_file_path):
             continue
     return catalog
 
-# Helper function to convert image to Base64 for embed inside HTML report
 def get_image_base64(image_path):
     if image_path and os.path.exists(image_path):
         with open(image_path, "rb") as img_file:
@@ -434,9 +433,6 @@ def generate_printable_html(selected_name, selected_code, selected_year, full_ve
 FILE_VEHICLES = "NFC New VRI Project (2) (2).xlsx"  
 FILE_SUPPLEMENT = "Bank & RMC Details.xlsx"
 
-# ==========================================
-# VEHICLE IMAGES MAP (Matches exact GitHub filenames)
-# ==========================================
 VEHICLE_IMAGES = {
     "Attrage": "attrage.png.png",
     "Mirage": "mirage.png.png",
@@ -483,9 +479,6 @@ else:
         else:
             st.stop()
 
-        # ------------------------------------------------------------------
-        # ROBUST SIDEBAR IMAGE DISPLAY ENGINE (VARIANT SENSITIVE)
-        # ------------------------------------------------------------------
         lookup_name = "Xpander Cross" if (selected_name == "Xpander" and str(selected_code).strip().upper() == "XC") else selected_name
         resolved_path = None
         
@@ -615,19 +608,108 @@ else:
     elif st.session_state.view_state == "summary":
         st.title("📄 Mitsubishi Financial Matrix Calculator")
         st.subheader(f"Unit Selected: {selected_name} — Variant {selected_code} ({selected_year})")
-        
+
+        # PREPARE DATA FOR DOWNLOADS
+        tenures = [1, 2, 3, 4, 5]
+        vehicle_emi_results = []
+        for years in tenures:
+            months = years * 12
+            total_interest = finance_amount * bank_rate * years
+            monthly_emi = (finance_amount + total_interest) / months
+            vehicle_emi_results.append({
+                "Asset Term (Years)": f"{years} Years ({months} Mos)",
+                "Flat ROI %": f"{bank_rate*100:.4f}%",
+                "Principal Loan Block": f"{finance_amount:,.2f} AED",
+                "Total Interest Accrued": f"{total_interest:,.2f} AED",
+                "Monthly Vehicle EMI": f"{monthly_emi:,.2f} AED"
+            })
+
+        dp_results = []
+        if finance_dp_option:
+            vehicle_reservation_fee = v_data["reservation_fee"]
+            dp_financed_base = max(0.0, calculated_downpayment - vehicle_reservation_fee)
+            dp_options = [
+                {"months": 3, "rate": 0.0000, "label": "3 Months (0.00% ROI)"},
+                {"months": 12, "rate": 0.0525, "label": "12 Months (5.25% ROI)"},
+                {"months": 24, "rate": 0.0630, "label": "24 Months (6.30% ROI)"}
+            ]
+            for opt in dp_options:
+                total_interest = dp_financed_base * opt["rate"] * (opt["months"] / 12.0)
+                monthly_emi = (dp_financed_base + total_interest) / opt["months"]
+                dp_results.append({
+                    "Term": opt["label"],
+                    "Financed Balance": f"{dp_financed_base:,.2f} AED",
+                    "Total Interest": f"{total_interest:,.2f} AED",
+                    "Monthly EMI": f"{monthly_emi:,.2f} AED"
+                })
+
+        registration_fee = v_data["registration_fee"]
+        if finance_dp_option:
+            vehicle_reservation_fee = v_data["reservation_fee"]
+            grand_total_cash_outlay = vehicle_reservation_fee + registration_fee + dp_processing_fee + bank_processing_fee
+        else:
+            grand_total_cash_outlay = calculated_downpayment + registration_fee + dp_processing_fee + bank_processing_fee
+
+        printable_html = generate_printable_html(
+            selected_name=selected_name,
+            selected_code=selected_code,
+            selected_year=selected_year,
+            full_vehicle_value=full_vehicle_value_including_addons,
+            downpayment=calculated_downpayment,
+            finance_amount=finance_amount,
+            vehicle_emi_results=vehicle_emi_results,
+            dp_results=dp_results,
+            checked_addons_list=checked_addons_list,
+            grand_total_cash_outlay=grand_total_cash_outlay,
+            registration_fee=registration_fee,
+            dp_processing_fee=dp_processing_fee,
+            bank_processing_fee=bank_processing_fee,
+            finance_dp_option=finance_dp_option,
+            reservation_fee=v_data["reservation_fee"],
+            image_path=resolved_path
+        )
+
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            pd.DataFrame(vehicle_emi_results).to_excel(writer, index=False, sheet_name="Vehicle Loan Matrix")
+
+        # TOP ACTION BAR
+        col_top1, col_top2, col_top3 = st.columns(3)
+        with col_top1:
+            if st.button("⬅️ Back to Input", key="back_top", use_container_width=True):
+                st.session_state.view_state = "input"
+                st.rerun()
+        with col_top2:
+            st.download_button(
+                label="💾 Save as Excel Spreadsheet",
+                data=buffer.getvalue(),
+                file_name=f"{selected_name.replace(' ', '_')}_Summary.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="excel_top",
+                use_container_width=True
+            )
+        with col_top3:
+            st.download_button(
+                label="🖨️ Download HTML for PDF/Print",
+                data=printable_html,
+                file_name=f"{selected_name.replace(' ', '_')}_Report.html",
+                mime="text/html",
+                key="html_top",
+                use_container_width=True
+            )
+
+        st.markdown("---")
+
+        # VEHICLE IMAGE DISPLAY
         lookup_name = "Xpander Cross" if (selected_name == "Xpander" and str(selected_code).strip().upper() == "XC") else selected_name
-        resolved_path = None
         if lookup_name in VEHICLE_IMAGES:
             img_file = VEHICLE_IMAGES[lookup_name]
             resolved_path = find_valid_image_path(img_file)
             if resolved_path:
                 st.image(resolved_path, width=420)
-                
-        st.markdown("---")
 
         # SECTION 1: SUMMARY SECTION
-        st.header("Financial Overview")
+        st.header("1. Financial Overview")
         col_s1, col_s2, col_s3 = st.columns(3)
         col_s1.metric("Total Vehicle Value", f"{full_vehicle_value_including_addons:,.2f} AED") 
         col_s2.metric("Gross Down Payment Req.", f"{calculated_downpayment:,.2f} AED")
@@ -636,49 +718,12 @@ else:
 
         # SECTION 2: EMI BREAKDOWN MATRIX
         st.header("2. Loan Installment Breakdowns")
-        
         st.subheader("🟢 Primary Asset Vehicle Financing")
-        tenures = [1, 2, 3, 4, 5]
-        vehicle_emi_results = []
-        
-        for years in tenures:
-            months = years * 12
-            total_interest = finance_amount * bank_rate * years
-            monthly_emi = (finance_amount + total_interest) / months
-            
-            vehicle_emi_results.append({
-                "Asset Term (Years)": f"{years} Years ({months} Mos)",
-                "Flat ROI %": f"{bank_rate*100:.4f}%",
-                "Principal Loan Block": f"{finance_amount:,.2f} AED",
-                "Total Interest Accrued": f"{total_interest:,.2f} AED",
-                "Monthly Vehicle EMI": f"{monthly_emi:,.2f} AED"
-            })
         st.table(pd.DataFrame(vehicle_emi_results))
         
-        dp_results = []
-        if finance_dp_option:
+        if finance_dp_option and dp_results:
             st.markdown("<br>", unsafe_allow_html=True)
             st.subheader("🔵 Down Payment Loan Financing Options")
-            vehicle_reservation_fee = v_data["reservation_fee"]
-            dp_financed_base = max(0.0, calculated_downpayment - vehicle_reservation_fee)
-            
-            dp_options = [
-                {"months": 3, "rate": 0.0000, "label": "3 Months (0.00% ROI)"},
-                {"months": 12, "rate": 0.0525, "label": "12 Months (5.25% ROI)"},
-                {"months": 24, "rate": 0.0630, "label": "24 Months (6.30% ROI)"}
-            ]
-            
-            for opt in dp_options:
-                total_interest = dp_financed_base * opt["rate"] * (opt["months"] / 12.0)
-                monthly_emi = (dp_financed_base + total_interest) / opt["months"]
-                
-                dp_results.append({
-                    "Term": opt["label"],
-                    "Financed Balance": f"{dp_financed_base:,.2f} AED",
-                    "Total Interest": f"{total_interest:,.2f} AED",
-                    "Monthly EMI": f"{monthly_emi:,.2f} AED"
-                })
-            
             st.table(pd.DataFrame(dp_results))
             
         st.markdown("---")
@@ -705,14 +750,6 @@ else:
 
         # SECTION 4: TOTAL CASH OUTLAY REQUIRED
         st.header("4. Out-of-Pocket Cash Outlay Summary")
-        registration_fee = v_data["registration_fee"]
-        
-        if finance_dp_option:
-            vehicle_reservation_fee = v_data["reservation_fee"]
-            grand_total_cash_outlay = vehicle_reservation_fee + registration_fee + dp_processing_fee + bank_processing_fee
-        else:
-            grand_total_cash_outlay = calculated_downpayment + registration_fee + dp_processing_fee + bank_processing_fee
-        
         col_out1, col_out2 = st.columns(2)
         with col_out1:
             if finance_dp_option:
@@ -759,50 +796,27 @@ else:
         
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # ACTION BUTTONS
+        # BOTTOM ACTION BAR
         col_btn1, col_btn2, col_btn3 = st.columns(3)
-        
         with col_btn1:
-            if st.button("⬅️ Back to Input", use_container_width=True):
+            if st.button("⬅️ Back to Input", key="back_bottom", use_container_width=True):
                 st.session_state.view_state = "input"
                 st.rerun()
-                
         with col_btn2:
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                pd.DataFrame(vehicle_emi_results).to_excel(writer, index=False, sheet_name="Vehicle Loan Matrix")
             st.download_button(
                 label="💾 Save as Excel Spreadsheet",
                 data=buffer.getvalue(),
                 file_name=f"{selected_name.replace(' ', '_')}_Summary.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="excel_bottom",
                 use_container_width=True
             )
-            
         with col_btn3:
-            printable_html = generate_printable_html(
-                selected_name=selected_name,
-                selected_code=selected_code,
-                selected_year=selected_year,
-                full_vehicle_value=full_vehicle_value_including_addons,
-                downpayment=calculated_downpayment,
-                finance_amount=finance_amount,
-                vehicle_emi_results=vehicle_emi_results,
-                dp_results=dp_results,
-                checked_addons_list=checked_addons_list,
-                grand_total_cash_outlay=grand_total_cash_outlay,
-                registration_fee=registration_fee,
-                dp_processing_fee=dp_processing_fee,
-                bank_processing_fee=bank_processing_fee,
-                finance_dp_option=finance_dp_option,
-                reservation_fee=v_data["reservation_fee"],
-                image_path=resolved_path
-            )
-            
             st.download_button(
                 label="🖨️ Download HTML for PDF/Print",
                 data=printable_html,
                 file_name=f"{selected_name.replace(' ', '_')}_Report.html",
                 mime="text/html",
+                key="html_bottom",
                 use_container_width=True
             )
